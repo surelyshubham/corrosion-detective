@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useRef, useEffect, useState, useCallback } from 'react'
@@ -10,7 +9,7 @@ import { Percent, Ruler, ZoomIn, Search, MousePointer } from 'lucide-react'
 
 // --- Color Helper Functions ---
 const getAbsColor = (percentage: number | null): string => {
-    if (percentage === null) return '#888888'; // Grey for ND
+    if (percentage === null) return 'transparent'; // ND
     if (percentage <= 60) return '#ff0000'; // Red
     if (percentage <= 80) return '#ffa500'; // Orange
     if (percentage <= 95) return '#ffff00'; // Yellow
@@ -18,7 +17,7 @@ const getAbsColor = (percentage: number | null): string => {
 };
 
 const getNormalizedColor = (normalizedPercent: number | null): string => {
-    if (normalizedPercent === null) return '#888888'; // Grey for ND
+    if (normalizedPercent === null) return 'transparent'; // ND
     // Blue to Red
     const hue = 240 * (1 - normalizedPercent);
     return `hsl(${hue}, 100%, 50%)`;
@@ -79,7 +78,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
           </CardHeader>
           <CardContent className="p-3 pt-0 text-xs">
             {mode === 'mm' ? renderMmLegend() : renderPercentLegend()}
-            <div className="text-xs text-muted-foreground mt-1">ND: Gray</div>
+            <div className="text-xs text-muted-foreground mt-1">ND: transparent</div>
           </CardContent>
         </Card>
     )
@@ -106,26 +105,54 @@ export function TwoDeeHeatmapTab() {
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 })
   const [hoveredPoint, setHoveredPoint] = useState<any>(null)
 
-  const { processedData, stats, nominalThickness } = inspectionResult || {};
+  const { mergedGrid, stats, nominalThickness, plates } = inspectionResult || {};
   const { gridSize, minThickness: minEffT, maxThickness: maxEffT } = stats || {};
   const effTRange = (maxEffT && minEffT) ? maxEffT - minEffT : 0;
   
   const AXIS_SIZE = 40;
   const CELL_SIZE = 6; // Base cell size
 
-  const dataMap = React.useMemo(() => {
-    const map = new Map<string, any>();
-    if (!processedData) return map;
-    processedData.forEach(p => map.set(`${p.x},${p.y}`, p));
-    return map;
-  }, [processedData]);
+  const plateBoundaries = useMemo(() => {
+    if (!mergedGrid || plates.length <= 1) return [];
+
+    const boundaries: { x: number; y: number; width: number; height: number, plateId: string }[] = [];
+    const height = mergedGrid.length;
+    if (height === 0) return [];
+    const width = mergedGrid[0].length;
+    
+    const plateIds = plates.map(p => p.id);
+    plateIds.forEach(id => {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let found = false;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (mergedGrid[y][x]?.plateId === id) {
+            found = true;
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+      if (found) {
+        boundaries.push({
+          x: minX,
+          y: minY,
+          width: maxX - minX + 1,
+          height: maxY - minY + 1,
+          plateId: id
+        });
+      }
+    });
+    return boundaries;
+  }, [mergedGrid, plates]);
+
 
   // --- Drawing Logic ---
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !gridSize || !containerRef.current) return;
-    
-    const dpr = window.devicePixelRatio || 1;
+    if (!canvas || !gridSize || !containerRef.current || !mergedGrid) return;
     
     const canvasWidth = gridSize.width * CELL_SIZE;
     const canvasHeight = gridSize.height * CELL_SIZE;
@@ -135,32 +162,42 @@ export function TwoDeeHeatmapTab() {
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card').trim();
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
 
     // Heatmap
+    const allEffThicknesses = mergedGrid.flat().map(c => c.effectiveThickness).filter(t => t !== null) as number[];
+    const minEffT = Math.min(...allEffThicknesses);
+    const effTRange = Math.max(...allEffThicknesses) - minEffT;
+    
     for (let y = 0; y < gridSize.height; y++) {
       for (let x = 0; x < gridSize.width; x++) {
-        const point = dataMap.get(`${x},${y}`);
+        const point = mergedGrid[y]?.[x];
         let color: string;
         
-        if (point === undefined) continue;
-
-        if (colorMode === '%') {
-            const normalized = (point?.effectiveThickness !== null && effTRange > 0)
+        if (!point || point.effectiveThickness === null) {
+          color = 'transparent';
+        } else if (colorMode === '%') {
+            const normalized = effTRange > 0
                 ? (point.effectiveThickness - minEffT) / effTRange
-                : null;
+                : 0;
             color = getNormalizedColor(normalized);
         } else {
-            color = getAbsColor(point?.percentage ?? null);
+            color = getAbsColor(point.percentage);
         }
-
-        ctx.fillStyle = color;
-        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        
+        if (color !== 'transparent') {
+          ctx.fillStyle = color;
+          ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
       }
     }
     
-    // Grid Lines
-    if (transform.scale > 5) {
-      ctx.strokeStyle = "rgba(200, 200, 200, 0.2)";
+    // Grid Lines (only when zoomed in)
+    if (transform.scale > 8) {
+      ctx.strokeStyle = "rgba(100, 100, 100, 0.2)";
       ctx.lineWidth = 1 / transform.scale;
       for (let x = 0; x <= gridSize.width; x++) {
         ctx.beginPath();
@@ -175,18 +212,26 @@ export function TwoDeeHeatmapTab() {
         ctx.stroke();
       }
     }
+    
+    // Plate Boundaries
+    ctx.strokeStyle = '#FFFFFF'; // White boundaries
+    ctx.lineWidth = 4 / transform.scale;
+    plateBoundaries.forEach(b => {
+        ctx.strokeRect(b.x * CELL_SIZE, b.y * CELL_SIZE, b.width * CELL_SIZE, b.height * CELL_SIZE);
+    });
+
 
     // Selection outline
     if (selectedPoint) {
         ctx.strokeStyle = '#00ffff'; // Cyan
-        ctx.lineWidth = 2 / transform.scale;
+        ctx.lineWidth = 4 / transform.scale;
         ctx.strokeRect(selectedPoint.x * CELL_SIZE, selectedPoint.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
     }
     
-  }, [gridSize, colorMode, dataMap, minEffT, effTRange, transform.scale, selectedPoint]);
+  }, [gridSize, colorMode, mergedGrid, minEffT, effTRange, transform.scale, selectedPoint, plateBoundaries]);
 
   const drawAxes = useCallback(() => {
-    if (!gridSize || !xAxisRef.current || !yAxisRef.current) return;
+    if (!gridSize || !xAxisRef.current || !yAxisRef.current || !containerRef.current) return;
     
     const dpr = window.devicePixelRatio || 1;
     const xAxis = xAxisRef.current;
@@ -213,8 +258,9 @@ export function TwoDeeHeatmapTab() {
     xCtx.clearRect(0, 0, xAxis.width, xAxis.height);
     yCtx.clearRect(0, 0, yAxis.width, yAxis.height);
     
-    xCtx.fillStyle = '#9ca3af'; // text-muted-foreground
-    yCtx.fillStyle = '#9ca3af';
+    const foregroundColor = getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim();
+    xCtx.fillStyle = `hsl(${foregroundColor})`;
+    yCtx.fillStyle = `hsl(${foregroundColor})`;
     xCtx.font = '10px sans-serif';
     yCtx.font = '10px sans-serif';
 
@@ -278,7 +324,8 @@ export function TwoDeeHeatmapTab() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     if (isPanning) {
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
@@ -290,8 +337,7 @@ export function TwoDeeHeatmapTab() {
         setLastPanPoint({ x: e.clientX, y: e.clientY });
     }
     
-    // Tooltip logic
-    if (!gridSize) { setHoveredPoint(null); return; };
+    if (!gridSize || !mergedGrid) { setHoveredPoint(null); return; };
     
     const mouseX = e.clientX - rect.left - AXIS_SIZE;
     const mouseY = e.clientY - rect.top - AXIS_SIZE;
@@ -300,9 +346,9 @@ export function TwoDeeHeatmapTab() {
     const gridY = Math.floor((mouseY + transform.offsetY) / (CELL_SIZE * transform.scale));
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
-        const pointData = dataMap.get(`${gridX},${gridY}`);
+        const pointData = mergedGrid[gridY]?.[gridX];
         if(pointData) {
-            setHoveredPoint({ ...pointData, clientX: e.clientX, clientY: e.clientY });
+            setHoveredPoint({ x: gridX, y: gridY, ...pointData, clientX: e.clientX, clientY: e.clientY });
         } else {
             setHoveredPoint(null);
         }
@@ -313,11 +359,12 @@ export function TwoDeeHeatmapTab() {
   
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     
     const scaleAmount = 1.1;
     const newScale = e.deltaY < 0 ? transform.scale * scaleAmount : transform.scale / scaleAmount;
-    const clampedScale = Math.max(0.2, Math.min(newScale, 20));
+    const clampedScale = Math.max(0.2, Math.min(newScale, 50));
 
     const mouseX = e.clientX - rect.left - AXIS_SIZE;
     const mouseY = e.clientY - rect.top - AXIS_SIZE;
@@ -334,7 +381,8 @@ export function TwoDeeHeatmapTab() {
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!gridSize) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left - AXIS_SIZE;
     const mouseY = e.clientY - rect.top - AXIS_SIZE;
 
@@ -370,14 +418,10 @@ export function TwoDeeHeatmapTab() {
             <canvas ref={yAxisRef} className="absolute left-0 top-[--axis-size]" style={{ '--axis-size': `${AXIS_SIZE}px` } as React.CSSProperties} />
             <canvas ref={xAxisRef} className="absolute left-[--axis-size] top-0" style={{ '--axis-size': `${AXIS_SIZE}px` } as React.CSSProperties} />
             
-            <div className="absolute overflow-hidden" style={{ top: AXIS_SIZE, left: AXIS_SIZE }}>
-                <canvas
-                    ref={canvasRef}
-                    style={{
-                        transformOrigin: 'top left',
-                        transform: `scale(${transform.scale}) translate(-${transform.offsetX / transform.scale}px, -${transform.offsetY / transform.scale}px)`,
-                    }}
-                />
+            <div className="absolute overflow-hidden" style={{ top: AXIS_SIZE, left: AXIS_SIZE, right: 0, bottom: 0}}>
+                <div style={{ width: gridSize ? gridSize.width * CELL_SIZE : '100%', height: gridSize ? gridSize.height * CELL_SIZE : '100%', transformOrigin: 'top left', transform: `scale(${transform.scale}) translate(-${transform.offsetX / transform.scale}px, -${transform.offsetY / transform.scale}px)`}}>
+                    <canvas ref={canvasRef} />
+                </div>
             </div>
 
             {hoveredPoint && (
@@ -389,6 +433,7 @@ export function TwoDeeHeatmapTab() {
                 }}
               >
                 <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
+                {hoveredPoint.plateId && <div className="text-muted-foreground">{hoveredPoint.plateId}</div>}
                 <div>Raw Thick: {hoveredPoint.rawThickness?.toFixed(2) ?? 'ND'} mm</div>
                 <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
                 <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>

@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useRef, useEffect, useState, useMemo } from 'react'
@@ -96,7 +95,7 @@ function createTextSprite(message: string, opts: { fontsize?: number, fontface?:
     context.font = `Bold ${fontsize}px ${fontface}`;
     const metrics = context.measureText(message);
     canvas.width = metrics.width;
-    canvas.height = fontsize;
+    canvas.height = fontsize * 1.4; // give some space
     context.font = `Bold ${fontsize}px ${fontface}`;
     context.fillStyle = `rgba(${textColor.r}, ${textColor.g}, ${textColor.b}, ${textColor.a})`;
     context.fillText(message, 0, fontsize);
@@ -121,50 +120,44 @@ export function ThreeDeeViewTab() {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshRef = useRef<THREE.Mesh | null>(null);
-  const dataMapRef = useRef(new Map());
 
-  const { processedData, stats, nominalThickness } = inspectionResult || {};
+  const { mergedGrid, stats, nominalThickness } = inspectionResult || {};
 
   const VISUAL_WIDTH = 100;
 
   const geometry = useMemo(() => {
-    if (!stats || !processedData) return null;
+    if (!stats || !mergedGrid) return null;
     const { gridSize } = stats;
+    if (gridSize.width <= 1 || gridSize.height <= 1) return null;
     const aspect = gridSize.height / gridSize.width;
     const geom = new THREE.PlaneGeometry(VISUAL_WIDTH, VISUAL_WIDTH * aspect, gridSize.width - 1, gridSize.height - 1);
     return geom;
-  }, [stats, processedData]);
+  }, [stats, mergedGrid]);
 
 
   useEffect(() => {
-    if (!geometry || !meshRef.current || !stats || !nominalThickness || !processedData) return;
+    if (!geometry || !meshRef.current || !stats || !nominalThickness || !mergedGrid) return;
 
     const { gridSize } = stats;
+    const allRawThicknesses = mergedGrid.flat().map(c => c.rawThickness).filter(t => t !== null) as number[];
+    const minRawT = Math.min(...allRawThicknesses);
+    const rawTRange = Math.max(...allRawThicknesses) - minRawT;
+
+    const allEffThicknesses = mergedGrid.flat().map(c => c.effectiveThickness).filter(t => t !== null) as number[];
+    const minEffT = Math.min(...allEffThicknesses);
+    const effTRange = Math.max(...allEffThicknesses) - minEffT;
     
-    // Get min/max of raw thickness for Z-scaling
-    const rawThicknesses = processedData.map(p => p.rawThickness).filter(t => t !== null) as number[];
-    const minRawT = Math.min(...rawThicknesses);
-    const maxRawT = Math.max(...rawThicknesses);
-    const rawTRange = maxRawT - minRawT;
-
-    // Get min/max of effective thickness for normalized color scaling
-    const effectiveThicknesses = processedData.map(p => p.effectiveThickness).filter(t => t !== null) as number[];
-    const minEffT = Math.min(...effectiveThicknesses);
-    const maxEffT = Math.max(...effectiveThicknesses);
-    const effTRange = maxEffT - minEffT;
-
-
     const colors: number[] = [];
     const positions = geometry.attributes.position;
 
     let i = 0;
     for (let y = 0; y < gridSize.height; y++) {
         for (let x = 0; x < gridSize.width; x++, i++) {
-            const pointData = dataMapRef.current.get(`${x},${y}`);
+            const cellData = mergedGrid[y]?.[x];
             
             // Z-position from RAW thickness
-            if (pointData && pointData.rawThickness !== null) {
-                const normRaw = rawTRange > 0 ? (pointData.rawThickness - minRawT) / rawTRange : 0;
+            if (cellData && cellData.rawThickness !== null) {
+                const normRaw = rawTRange > 0 ? (cellData.rawThickness - minRawT) / rawTRange : 0;
                 positions.setZ(i, normRaw * zScale);
             } else {
                 positions.setZ(i, 0); 
@@ -173,12 +166,12 @@ export function ThreeDeeViewTab() {
             // Color from EFFECTIVE thickness
             let color: THREE.Color;
             if (colorMode === '%') {
-                 const normalizedPercent = (pointData && pointData.effectiveThickness !== null && effTRange > 0)
-                    ? (pointData.effectiveThickness - minEffT) / effTRange
+                 const normalizedPercent = (cellData && cellData.effectiveThickness !== null && effTRange > 0)
+                    ? (cellData.effectiveThickness - minEffT) / effTRange
                     : null;
                 color = getNormalizedColor(normalizedPercent);
             } else {
-                color = getAbsColor(pointData?.percentage ?? null);
+                color = getAbsColor(cellData?.percentage ?? null);
             }
             colors.push(color.r, color.g, color.b);
         }
@@ -191,15 +184,14 @@ export function ThreeDeeViewTab() {
     
     meshRef.current.geometry = geometry;
 
-  }, [geometry, zScale, colorMode, nominalThickness, stats, processedData]);
+  }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid]);
 
 
   useEffect(() => {
     if (!mountRef.current || !inspectionResult || !geometry) return
 
-    const { processedData, stats, nominalThickness } = inspectionResult
+    const { mergedGrid, stats, nominalThickness } = inspectionResult
     const { gridSize, minThickness, maxThickness } = stats
-    dataMapRef.current = new Map(processedData.map(p => [`${p.x},${p.y}`, p]))
     
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
@@ -230,25 +222,24 @@ export function ThreeDeeViewTab() {
     // AXES and GRIDS
     const gridContainer = new THREE.Group();
     const mainGrid = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444);
-    mainGrid.rotation.x = Math.PI / 2;
     gridContainer.add(mainGrid);
 
     const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
-    axesHelper.position.set(-VISUAL_WIDTH/2, -visualHeight/2, 0);
+    axesHelper.position.set(-VISUAL_WIDTH/2, 0, -visualHeight/2);
     gridContainer.add(axesHelper);
     
     // Add axis labels
     const axisLabels = new THREE.Group();
-    const xLabel = createTextSprite("X", {});
-    xLabel.position.set(VISUAL_WIDTH / 2 + 10, -visualHeight / 2, 0);
+    const xLabel = createTextSprite("X", {fontsize: 32});
+    xLabel.position.set(VISUAL_WIDTH / 2 + 10, 0, -visualHeight / 2);
     axisLabels.add(xLabel);
 
-    const yLabel = createTextSprite("Y", {});
-    yLabel.position.set(-VISUAL_WIDTH / 2, visualHeight / 2 + 10, 0);
+    const yLabel = createTextSprite("Y", {fontsize: 32});
+    yLabel.position.set(-VISUAL_WIDTH / 2, 0, visualHeight / 2 + 10);
     axisLabels.add(yLabel);
 
-    const zLabel = createTextSprite("Z (Thickness)", {});
-    zLabel.position.set(-VISUAL_WIDTH / 2, -visualHeight / 2, zScale > 0 ? zScale + 10 : 10);
+    const zLabel = createTextSprite("Z (Thickness)", {fontsize: 32});
+    zLabel.position.set(-VISUAL_WIDTH / 2, zScale > 0 ? zScale + 10 : 10, -visualHeight / 2);
     axisLabels.add(zLabel);
     
     const tickLength = 2;
@@ -259,54 +250,65 @@ export function ThreeDeeViewTab() {
         // X-axis ticks
         const xPos = (frac - 0.5) * VISUAL_WIDTH;
         const xTickLabel = createTextSprite(`${Math.round(frac * gridSize.width)}`, { fontsize: 18 });
-        xTickLabel.position.set(xPos, -visualHeight / 2 - tickLength - 5, 0);
+        xTickLabel.position.set(xPos, 0, -visualHeight / 2 - tickLength - 5);
         axisLabels.add(xTickLabel);
 
         // Y-axis ticks
         const yPos = (frac - 0.5) * visualHeight;
         const yTickLabel = createTextSprite(`${Math.round(frac * gridSize.height)}`, { fontsize: 18 });
-        yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, yPos, 0);
+        yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, 0, yPos);
         axisLabels.add(yTickLabel);
     }
     
     gridContainer.add(axisLabels);
     scene.add(gridContainer);
-    gridContainer.rotation.x = -Math.PI / 2;
 
 
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
     meshRef.current = mesh;
 
     const refPlaneGeom = new THREE.PlaneGeometry(VISUAL_WIDTH * 1.1, visualHeight * 1.1);
     const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x1e90ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
     const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
-    refPlane.rotation.x = -Math.PI / 2;
     refPlane.visible = showReference;
     scene.add(refPlane);
     
-    const rawThicknesses = processedData.map(p => p.rawThickness).filter(t => t !== null) as number[];
-    const minRawT = Math.min(...rawThicknesses);
-    const rawTRange = Math.max(...rawThicknesses) - minRawT;
+    const allRawThicknesses = mergedGrid.flat().map(c => c.rawThickness).filter(t => t !== null) as number[];
+    const minRawT = Math.min(...allRawThicknesses);
+    const rawTRange = Math.max(...allRawThicknesses) - minRawT;
 
     const minMaxGroup = new THREE.Group();
-    const minPoint = processedData.find(p => p.effectiveThickness === minThickness)
+    
     let minMarker: THREE.Mesh | null = null;
-    if(minPoint){
+    if(stats.worstLocation){
         minMarker = new THREE.Mesh(new THREE.SphereGeometry(VISUAL_WIDTH/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
         minMaxGroup.add(minMarker);
     }
-    const maxPoint = processedData.reduce((prev, current) => {
+    
+    const allPoints = mergedGrid.flat().filter(p => p.rawThickness !== null);
+    const maxPoint = allPoints.reduce((prev, current) => {
       if (current.rawThickness === null || prev.rawThickness === null) return prev;
       return (prev.rawThickness > current.rawThickness) ? prev : current
-    })
+    }, allPoints[0])
+    
     let maxMarker: THREE.Mesh | null = null;
-    if(maxPoint){
+    let maxPointCoords = {x: 0, y: 0};
+
+    // Find coordinates of maxPoint
+    if(maxPoint) {
+        for (let y = 0; y < gridSize.height; y++) {
+            const x = mergedGrid[y].findIndex(p => p.rawThickness === maxPoint.rawThickness);
+            if(x !== -1) {
+                maxPointCoords = { x, y };
+                break;
+            }
+        }
         maxMarker = new THREE.Mesh(new THREE.SphereGeometry(VISUAL_WIDTH/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
         minMaxGroup.add(maxMarker);
     }
+
     minMaxGroup.visible = showMinMax;
     scene.add(minMaxGroup);
     
@@ -319,25 +321,27 @@ export function ThreeDeeViewTab() {
       controls.update()
       
       const normNominal = rawTRange > 0 ? (nominalThickness - minRawT) / rawTRange : 0;
-      refPlane.position.z = normNominal * zScale;
-      refPlane.rotation.x = -Math.PI / 2;
+      refPlane.position.y = normNominal * zScale;
       refPlane.visible = showReference;
 
-      if(minPoint && minPoint.rawThickness !== null && minMarker){ 
-          const normMinZ = rawTRange > 0 ? (minPoint.rawThickness - minRawT) / rawTRange : 0;
-          minMarker.position.set( (minPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, (minPoint.y / gridSize.height - 0.5) * visualHeight, normMinZ * zScale);
+      if(minMarker && stats.worstLocation){ 
+          const pointData = mergedGrid[stats.worstLocation.y]?.[stats.worstLocation.x];
+          if (pointData && pointData.rawThickness !== null) {
+            const normMinZ = rawTRange > 0 ? (pointData.rawThickness - minRawT) / rawTRange : 0;
+            minMarker.position.set( (stats.worstLocation.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMinZ * zScale, (stats.worstLocation.y / gridSize.height - 0.5) * visualHeight);
+          }
       }
-      if(maxPoint && maxPoint.rawThickness !== null && maxMarker){ 
+      if(maxMarker && maxPoint && maxPoint.rawThickness !== null){ 
           const normMaxZ = rawTRange > 0 ? (maxPoint.rawThickness - minRawT) / rawTRange : 0;
-          maxMarker.position.set( (maxPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, (maxPoint.y / gridSize.height - 0.5) * visualHeight, normMaxZ * zScale);
+          maxMarker.position.set( (maxPointCoords.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMaxZ * zScale, (maxPointCoords.y / gridSize.height - 0.5) * visualHeight);
        }
       minMaxGroup.visible = showMinMax;
 
       if (selectedPoint) {
-          const pointData = dataMapRef.current.get(`${selectedPoint.x},${selectedPoint.y}`);
+          const pointData = mergedGrid[selectedPoint.y]?.[selectedPoint.x];
           if (pointData && pointData.rawThickness !== null) {
               const normZ = rawTRange > 0 ? (pointData.rawThickness - minRawT) / rawTRange : 0;
-              selectedMarker.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, (selectedPoint.y / gridSize.height - 0.5) * visualHeight, normZ * zScale );
+              selectedMarker.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, normZ * zScale, (selectedPoint.y / gridSize.height - 0.5) * visualHeight );
               selectedMarker.visible = true;
           } else {
               selectedMarker.visible = false;
@@ -345,10 +349,6 @@ export function ThreeDeeViewTab() {
       } else {
           selectedMarker.visible = false;
       }
-      
-      const planeRotationInverse = mesh.quaternion.clone().invert();
-      minMaxGroup.quaternion.copy(planeRotationInverse);
-      selectedMarker.quaternion.copy(planeRotationInverse);
       
       renderer.render(scene, camera)
     }
@@ -384,10 +384,10 @@ export function ThreeDeeViewTab() {
             const gridX = a % gridSize.width;
             const gridY = Math.floor(a / gridSize.width);
             
-            const pointData = dataMapRef.current.get(`${gridX},${gridY}`);
+            const cellData = mergedGrid[gridY]?.[gridX];
 
-            if (pointData) {
-                 setHoveredPoint({ ...pointData, clientX: event.clientX, clientY: event.clientY });
+            if (cellData) {
+                 setHoveredPoint({ x: gridX, y: gridY, ...cellData, clientX: event.clientX, clientY: event.clientY });
             } else {
                  setHoveredPoint(null);
             }
@@ -420,7 +420,7 @@ export function ThreeDeeViewTab() {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
         const { gridSize } = inspectionResult.stats;
         const aspect = gridSize.height / gridSize.width;
-        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, VISUAL_WIDTH * 0.9, zScale * 2);
+        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * aspect * 0.7 );
         controlsRef.current.target.set(0, 0, 0);
         controlsRef.current.update();
     }
@@ -447,6 +447,7 @@ export function ThreeDeeViewTab() {
             }}
           >
             <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
+            {hoveredPoint.plateId && <div className="text-muted-foreground">{hoveredPoint.plateId}</div>}
             <div>Raw Thick: {hoveredPoint.rawThickness?.toFixed(2) ?? 'ND'} mm</div>
             <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
             <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
@@ -503,5 +504,3 @@ export function ThreeDeeViewTab() {
     </div>
   )
 }
-
-    

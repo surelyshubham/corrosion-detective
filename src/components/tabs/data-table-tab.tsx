@@ -9,9 +9,16 @@ import { Download, ArrowUpDown, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { downloadFile } from '@/lib/utils'
 import { ScrollArea } from '../ui/scroll-area'
-import type { InspectionDataPoint } from '@/lib/types'
+import type { MergedCell } from '@/lib/types'
 
-type SortKey = keyof InspectionDataPoint
+interface TableDataPoint extends MergedCell {
+    x: number;
+    y: number;
+    deviation: number | null;
+    wallLoss: number | null;
+}
+
+type SortKey = keyof TableDataPoint;
 type SortDirection = 'asc' | 'desc'
 
 export function DataTableTab() {
@@ -19,7 +26,27 @@ export function DataTableTab() {
   const [filter, setFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null)
 
-  const data = inspectionResult?.processedData || []
+  const data = useMemo(() => {
+      if (!inspectionResult) return [];
+      const { mergedGrid, nominalThickness } = inspectionResult;
+      const tableData: TableDataPoint[] = [];
+      for (let y = 0; y < mergedGrid.length; y++) {
+          for (let x = 0; x < mergedGrid[y].length; x++) {
+              const cell = mergedGrid[y][x];
+              if (cell && cell.plateId) {
+                  tableData.push({
+                      ...cell,
+                      x,
+                      y,
+                      deviation: cell.effectiveThickness !== null ? cell.effectiveThickness - nominalThickness : null,
+                      wallLoss: cell.effectiveThickness !== null ? nominalThickness - cell.effectiveThickness : null,
+                  });
+              }
+          }
+      }
+      return tableData;
+  }, [inspectionResult])
+
 
   const sortedAndFilteredData = useMemo(() => {
     let filteredData = data
@@ -36,8 +63,8 @@ export function DataTableTab() {
         const aVal = a[sortConfig.key]
         const bVal = b[sortConfig.key]
 
-        if (aVal === null) return 1
-        if (bVal === null) return -1
+        if (aVal === null || aVal === undefined) return 1
+        if (bVal === null || bVal === undefined) return -1
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
         return 0
@@ -56,9 +83,11 @@ export function DataTableTab() {
   }
 
   const handleExport = () => {
+    const fileName = inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join('_') || 'merged_export';
     const sheet = XLSX.utils.json_to_sheet(sortedAndFilteredData.map(d => ({
         x: d.x,
         y: d.y,
+        plateId: d.plateId,
         rawThickness: d.rawThickness?.toFixed(3) ?? 'ND',
         effectiveThickness: d.effectiveThickness?.toFixed(3) ?? 'ND',
         deviation: d.deviation?.toFixed(3) ?? 'N/A',
@@ -69,12 +98,13 @@ export function DataTableTab() {
     XLSX.utils.book_append_sheet(workbook, sheet, 'Data')
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
     const blob = new Blob([excelBuffer], { type: 'application/octet-stream' })
-    downloadFile(blob, `${inspectionResult?.fileName.replace('.xlsx', '')}_data.xlsx`)
+    downloadFile(blob, `${fileName}_data.xlsx`)
   }
 
   const columns: { key: SortKey; label: string }[] = [
     { key: 'x', label: 'X' },
     { key: 'y', label: 'Y' },
+    { key: 'plateId', label: 'Plate ID'},
     { key: 'rawThickness', label: 'Raw Thickness (mm)' },
     { key: 'effectiveThickness', label: 'Effective Thickness (mm)' },
     { key: 'deviation', label: 'Deviation (mm)' },
@@ -107,7 +137,8 @@ export function DataTableTab() {
                 <TableHead key={col.key}>
                   <Button variant="ghost" onClick={() => requestSort(col.key)}>
                     {col.label}
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                    {sortConfig?.key === col.key && (sortConfig.direction === 'asc' ? ' ▲' : ' ▼')}
+                    {sortConfig?.key !== col.key && <ArrowUpDown className="ml-2 h-4 w-4" />}
                   </Button>
                 </TableHead>
               ))}
@@ -122,6 +153,7 @@ export function DataTableTab() {
               >
                 <TableCell>{item.x}</TableCell>
                 <TableCell>{item.y}</TableCell>
+                <TableCell className="truncate max-w-xs">{item.plateId}</TableCell>
                 <TableCell>{item.rawThickness !== null ? item.rawThickness.toFixed(3) : 'ND'}</TableCell>
                 <TableCell>{item.effectiveThickness !== null ? item.effectiveThickness.toFixed(3) : 'ND'}</TableCell>
                 <TableCell>{item.deviation !== null ? item.deviation.toFixed(3) : 'N/A'}</TableCell>

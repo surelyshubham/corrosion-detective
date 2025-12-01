@@ -49,13 +49,33 @@ export interface AIInsight {
   recommendation: string;
 }
 
-export interface InspectionResult {
+// New types for merging
+export type Plate = {
+  id: string; // Typically the filename
   fileName: string;
-  assetType: AssetType;
-  nominalThickness: number;
   processedData: InspectionDataPoint[];
   stats: InspectionStats;
-  condition: Condition;
   metadata: any[][];
+  assetType: AssetType;
+  nominalThickness: number;
+};
+
+export interface MergedCell {
+  plateId: string | null;
+  rawThickness: number | null;
+  effectiveThickness: number | null;
+  percentage: number | null;
+}
+
+export type MergedGrid = MergedCell[][]; // [y][x]
+
+export interface MergedInspectionResult {
+  plates: Plate[];
+  mergedGrid: MergedGrid;
+  nominalThickness: number;
+  assetType: AssetType;
+  // Global stats are calculated from the merged grid
+  stats: InspectionStats; 
+  condition: Condition;
   aiInsight: AIInsight | null;
 }

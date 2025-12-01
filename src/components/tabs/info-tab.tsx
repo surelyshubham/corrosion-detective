@@ -3,30 +3,30 @@
 import React from 'react'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2 } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers } from 'lucide-react'
+import { ScrollArea } from '../ui/scroll-area'
 
 export function InfoTab() {
   const { inspectionResult } = useInspectionStore()
 
   if (!inspectionResult) return null
 
-  const { fileName, assetType, nominalThickness, stats, condition, metadata, aiInsight } = inspectionResult
+  const { plates, nominalThickness, stats, condition, aiInsight } = inspectionResult
 
   const summaryData = [
-    { label: 'File Name', value: fileName },
-    { label: 'Asset Type', value: assetType },
+    { label: 'Asset Type', value: inspectionResult.assetType },
     { label: 'Nominal Thickness', value: `${nominalThickness.toFixed(2)} mm` },
-    { label: 'Condition', value: condition, className: getConditionClass(condition) },
-    { label: 'Scanned Area', value: `${stats.scannedArea.toFixed(2)} m²` },
-    { label: 'Total Points Scanned', value: stats.totalPoints.toLocaleString() },
+    { label: 'Overall Condition', value: condition, className: getConditionClass(condition) },
+    { label: 'Total Scanned Area', value: `${stats.scannedArea.toFixed(2)} m²` },
+    { label: 'Total Points in Grid', value: stats.totalPoints.toLocaleString() },
     { label: 'Not Scanned (ND) Points', value: stats.countND.toLocaleString() },
   ]
   
   const statsData = [
-    { label: 'Min Thickness', value: `${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)` },
+    { label: 'Min Eff. Thickness', value: `${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)` },
     { label: 'Max Eff. Thickness', value: `${stats.maxThickness.toFixed(2)} mm` },
     { label: 'Average Eff. Thickness', value: `${stats.avgThickness.toFixed(2)} mm` },
     { label: 'Worst Location', value: `X: ${stats.worstLocation.x}, Y: ${stats.worstLocation.y}` },
@@ -36,91 +36,114 @@ export function InfoTab() {
   ]
 
   return (
-    <div className="grid md:grid-cols-3 gap-6 animate-fade-in">
-      <div className="md:col-span-2 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-headline">Inspection Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
-              {summaryData.map(item => (
-                <div key={item.label} className="flex justify-between border-b pb-1">
-                  <dt className="text-sm text-muted-foreground">{item.label}</dt>
-                  <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-headline">Corrosion Statistics (based on Effective Thickness)</CardTitle>
-          </CardHeader>
-          <CardContent>
-             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
-              {statsData.map(item => (
-                <div key={item.label} className="flex justify-between border-b pb-1">
-                  <dt className="text-sm text-muted-foreground">{item.label}</dt>
-                  <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </CardContent>
-        </Card>
-
-        {metadata && metadata.length > 0 && (
+    <ScrollArea className="h-full pr-4">
+      <div className="grid md:grid-cols-3 gap-6 animate-fade-in">
+        <div className="md:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="font-headline">File Metadata</CardTitle>
+              <CardTitle className="font-headline">Overall Inspection Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableBody>
-                  {metadata.map((row, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{row[0]}</TableCell>
-                      <TableCell>{row[1]}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                {summaryData.map(item => (
+                  <div key={item.label} className="flex justify-between border-b pb-1">
+                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                    <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
             </CardContent>
           </Card>
-        )}
-      </div>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-headline">Overall Corrosion Statistics</CardTitle>
+            </CardHeader>
+            <CardContent>
+               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                {statsData.map(item => (
+                  <div key={item.label} className="flex justify-between border-b pb-1">
+                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                    <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
 
-      <div className="md:col-span-1">
-        <Card className="bg-card sticky top-6">
-          <CardHeader>
-            <CardTitle className="font-headline flex items-center gap-2">
-              <BrainCircuit className="text-primary"/>
-              AI-Powered Insight
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {aiInsight ? (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-sm">Condition Analysis</h4>
-                   <p className="text-sm text-muted-foreground">{aiInsight.condition}</p>
-                </div>
-                <Separator />
-                <div>
-                  <h4 className="font-semibold text-sm">Recommended Action</h4>
-                  <p className="text-sm font-bold text-accent">{aiInsight.recommendation}</p>
-                </div>
-              </div>
-            ) : (
-               <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-40">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="mt-4 text-sm">Generating insights and recommendations...</p>
-              </div>
+          {plates.map((plate, index) => (
+            <Card key={plate.id}>
+              <CardHeader>
+                <CardTitle className="font-headline text-lg">Plate {index + 1}: {plate.fileName}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                 <Table>
+                    <TableBody>
+                    {plate.metadata.map((row, idx) => (
+                        <TableRow key={idx}>
+                        <TableCell className="font-medium w-1/3">{row[0]}</TableCell>
+                        <TableCell>{row[1]}</TableCell>
+                        </TableRow>
+                    ))}
+                    </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="md:col-span-1">
+          <div className="sticky top-6 space-y-6">
+            <Card className="bg-card">
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <BrainCircuit className="text-primary"/>
+                  AI-Powered Insight
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {aiInsight ? (
+                  aiInsight.condition === 'Error' ? (
+                    <div className="text-destructive">{aiInsight.recommendation}</div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-sm">Condition Analysis</h4>
+                        <p className="text-sm text-muted-foreground">{aiInsight.condition}</p>
+                      </div>
+                      <Separator />
+                      <div>
+                        <h4 className="font-semibold text-sm">Recommended Action</h4>
+                        <p className="text-sm font-bold text-accent">{aiInsight.recommendation}</p>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-40">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="mt-4 text-sm">Generating insights for the merged data...</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            
+            {plates.length > 1 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-headline flex items-center gap-2">
+                    <Layers className="text-primary" />
+                    Plate Layout
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Layout summary will be implemented here.</p>
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
+
+          </div>
+        </div>
       </div>
-    </div>
+    </ScrollArea>
   )
 }

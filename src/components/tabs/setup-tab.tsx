@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,11 +10,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { assetTypes, type AssetType } from '@/lib/types'
-import { FileUp, Loader2, Paperclip, X } from 'lucide-react'
+import { FileUp, Loader2, Paperclip, X, ArrowDown, ArrowUp, ArrowLeft, ArrowRight } from 'lucide-react'
 import { DummyDataGenerator } from '@/components/dummy-data-generator'
+import { useInspectionStore } from '@/store/use-inspection-store'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 
 interface SetupTabProps {
-  onFileProcess: (file: File, assetType: AssetType, nominalThickness: number) => void
+  onFileProcess: (file: File, assetType: AssetType, nominalThickness: number, mergeDirection: 'left' | 'right' | 'top' | 'bottom') => void
   isLoading: boolean
 }
 
@@ -26,14 +28,17 @@ const setupSchema = z.object({
 type SetupFormValues = z.infer<typeof setupSchema>
 
 export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
+  const { inspectionResult } = useInspectionStore();
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isMergeAlertOpen, setIsMergeAlertOpen] = useState(false);
 
-  const { control, handleSubmit, watch, formState: { errors } } = useForm<SetupFormValues>({
+  const { control, handleSubmit, watch, formState: { errors }, getValues } = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
-      nominalThickness: 6,
+      nominalThickness: inspectionResult?.nominalThickness || 6,
+      assetType: inspectionResult?.assetType,
     },
   })
 
@@ -67,31 +72,41 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       }
   };
 
+  const processSubmit = (mergeDirection: 'left' | 'right' | 'top' | 'bottom') => {
+      if (!file) {
+          setFileError('An Excel file is required.');
+          return;
+      }
+      const data = getValues();
+      onFileProcess(file, data.assetType, data.nominalThickness, mergeDirection);
+      setFile(null); // Clear file after processing
+  };
 
-  const onSubmit = (data: SetupFormValues) => {
-    if (!file) {
-      setFileError('An Excel file is required.')
-      return
+  const onSubmit = () => {
+    if (inspectionResult) {
+      setIsMergeAlertOpen(true);
+    } else {
+      // It's the first file, so a direction isn't strictly necessary but we provide one.
+      processSubmit('bottom'); 
     }
-    onFileProcess(file, data.assetType, data.nominalThickness)
-  }
+  };
   
   return (
     <div className="grid md:grid-cols-2 gap-6 h-full">
       <Card>
         <CardHeader>
           <CardTitle className="font-headline">Inspection Setup</CardTitle>
-          <CardDescription>Start by providing the asset details and uploading the C-scan data.</CardDescription>
+          <CardDescription>Start by providing asset details and uploading C-scan data. Add multiple files to merge them.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="assetType">1. Select Asset Type</Label>
               <Controller
                 name="assetType"
                 control={control}
                 render={({ field }) => (
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading || !!inspectionResult}>
                     <SelectTrigger id="assetType">
                       <SelectValue placeholder="Select an asset type..." />
                     </SelectTrigger>
@@ -134,7 +149,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                   </label>
                 )}
 
-              {(fileError || errors.assetType) && <p className="text-sm text-destructive">{fileError || errors.assetType?.message}</p>}
+              {(fileError) && <p className="text-sm text-destructive">{fileError}</p>}
             </div>
 
             <div className="space-y-2">
@@ -143,22 +158,60 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                 name="nominalThickness"
                 control={control}
                 render={({ field }) => (
-                  <Input id="nominalThickness" type="number" step="0.1" {...field} disabled={isLoading} />
+                  <Input id="nominalThickness" type="number" step="0.1" {...field} disabled={isLoading || !!inspectionResult} />
                 )}
               />
               {errors.nominalThickness && <p className="text-sm text-destructive">{errors.nominalThickness.message}</p>}
             </div>
 
-            <Button type="submit" className="w-full" disabled={!file || !selectedAssetType || isLoading}>
+            <Button onClick={onSubmit} className="w-full" disabled={!file || !selectedAssetType || isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? 'Processing...' : 'Process Data'}
+              {isLoading ? 'Processing...' : (inspectionResult ? 'Process & Merge File' : 'Process File')}
             </Button>
-          </form>
+
+            {inspectionResult && (
+                <Card className="bg-muted/50">
+                    <CardHeader className="p-4">
+                        <CardTitle className="text-base">Plates Loaded: {inspectionResult.plates.length}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 text-sm">
+                        <ul className="list-disc pl-5">
+                            {inspectionResult.plates.map(p => <li key={p.id} className="truncate">{p.fileName}</li>)}
+                        </ul>
+                    </CardContent>
+                </Card>
+            )}
+          </div>
         </CardContent>
       </Card>
       
       <DummyDataGenerator isLoading={isLoading} />
-
+      
+      <AlertDialog open={isMergeAlertOpen} onOpenChange={setIsMergeAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge Plate</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have already loaded data. Where should this new plate be attached relative to the existing plate(s)?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="grid grid-cols-2 gap-4">
+            <Button variant="outline" onClick={() => { processSubmit('top'); setIsMergeAlertOpen(false); }}>
+              <ArrowUp className="mr-2"/>Attach to Top
+            </Button>
+            <Button variant="outline" onClick={() => { processSubmit('bottom'); setIsMergeAlertOpen(false); }}>
+              <ArrowDown className="mr-2"/>Attach to Bottom
+            </Button>
+            <Button variant="outline" onClick={() => { processSubmit('left'); setIsMergeAlertOpen(false); }}>
+              <ArrowLeft className="mr-2"/>Attach to Left
+            </Button>
+            <Button variant="outline" onClick={() => { processSubmit('right'); setIsMergeAlertOpen(false); }}>
+              <ArrowRight className="mr-2"/>Attach to Right
+            </Button>
+            <AlertDialogCancel className="col-span-2 mt-2">Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
