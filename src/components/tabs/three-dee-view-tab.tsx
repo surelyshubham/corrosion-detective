@@ -12,25 +12,21 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Camera, Expand, Minimize, Pin, Redo, RefreshCw } from 'lucide-react'
 
-// Red        = 0–20%
-// Orange     = 21–40%
-// Yellow     = 41–60%
-// LightGreen = 61–80%
-// DarkGreen  = 81–100%
-const getColor = (percentage: number | null) => {
-    if (percentage === null) return new THREE.Color(0x888888) // Grey for ND
-    if (percentage <= 20) return new THREE.Color(0xff0000) // Red
-    if (percentage <= 40) return new THREE.Color(0xffa500) // Orange
-    if (percentage <= 60) return new THREE.Color(0xffff00) // Yellow
-    if (percentage <= 80) return new THREE.Color(0x90ee90) // LightGreen
-    return new THREE.Color(0x006400) // DarkGreen
+const getColor = (percentage: number | null, forShader = false): THREE.Color => {
+    const color = new THREE.Color();
+    if (percentage === null) color.set(0x888888); // Grey for ND
+    else if (percentage <= 20) color.set(0xff0000); // Red
+    else if (percentage <= 40) color.set(0xffa500); // Orange
+    else if (percentage <= 60) color.set(0xffff00); // Yellow
+    else if (percentage <= 80) color.set(0x90ee90); // LightGreen
+    else color.set(0x006400); // DarkGreen
+    return color;
 };
-
 
 export function ThreeDeeViewTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
-  const [zScale, setZScale] = useState(5) // Increased default scale
+  const [zScale, setZScale] = useState(5)
   const [showReference, setShowReference] = useState(true)
   const [showMinMax, setShowMinMax] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState<any>(null)
@@ -60,8 +56,8 @@ export function ThreeDeeViewTab() {
     sceneRef.current = scene
 
     // Camera
-    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000)
-    camera.position.set(gridSize.width / 2, gridSize.height * 0.75, gridSize.width * 1.2)
+    const camera = new THREE.PerspectiveCamera(60, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 2000)
+    camera.position.set(gridSize.width * 0.9, gridSize.height * 1.2, gridSize.width * 1.4)
     cameraRef.current = camera
 
     // Controls
@@ -71,97 +67,109 @@ export function ThreeDeeViewTab() {
     controlsRef.current = controls
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8)
-    scene.add(ambientLight)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
-    directionalLight.position.set(100, 100, 100)
-    scene.add(directionalLight)
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5)
-    directionalLight2.position.set(-100, 100, -100)
-    scene.add(directionalLight2)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7))
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
+    dirLight.position.set(gridSize.width, gridSize.height * 2, gridSize.width)
+    scene.add(dirLight)
+
+    // Data texture for contour plot
+    const canvas = document.createElement('canvas')
+    canvas.width = gridSize.width;
+    canvas.height = gridSize.height;
+    const ctx = canvas.getContext('2d')!;
     
-    // Main Asset Geometry
-    const boxDepth = nominalThickness * 2; // Give it some visual thickness
-    const geometry = new THREE.BoxGeometry(gridSize.width, boxDepth, gridSize.height, gridSize.width - 1, 1, gridSize.height - 1);
-    const dataMap = dataMapRef.current;
-    
-    const positions = geometry.attributes.position;
+    const imgData = ctx.createImageData(gridSize.width, gridSize.height);
+    for (let y = 0; y < gridSize.height; y++) {
+      for (let x = 0; x < gridSize.width; x++) {
+        const point = dataMapRef.current.get(`${x},${y}`);
+        const color = getColor(point?.percentage ?? null);
+        const i = (y * gridSize.width + x) * 4;
+        imgData.data[i] = color.r * 255;
+        imgData.data[i+1] = color.g * 255;
+        imgData.data[i+2] = color.b * 255;
+        imgData.data[i+3] = 255;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const dataTexture = new THREE.CanvasTexture(canvas);
+    dataTexture.needsUpdate = true;
+
+
+    // Bounding Box / Chart Axes
+    const boxGeom = new THREE.BoxGeometry(gridSize.width, maxThickness * zScale, gridSize.height)
+    const boxEdges = new THREE.EdgesGeometry(boxGeom)
+    const boxLines = new THREE.LineSegments(boxEdges, new THREE.LineBasicMaterial({ color: 0xaaaaaa }))
+    boxLines.position.set(gridSize.width/2, (maxThickness * zScale)/2, gridSize.height/2)
+    scene.add(boxLines);
+
+    const gridHelper = new THREE.GridHelper(Math.max(gridSize.width, gridSize.height), 10, 0x888888, 0x888888)
+    gridHelper.position.set(gridSize.width / 2, 0, gridSize.height / 2)
+    scene.add(gridHelper);
+
+    // Contour plot on the floor
+    const floorGeom = new THREE.PlaneGeometry(gridSize.width, gridSize.height)
+    const floorMat = new THREE.MeshBasicMaterial({ map: dataTexture, side: THREE.DoubleSide })
+    const floorPlane = new THREE.Mesh(floorGeom, floorMat);
+    floorPlane.rotation.x = -Math.PI/2;
+    floorPlane.position.set(gridSize.width/2, 0.1, gridSize.height/2);
+    scene.add(floorPlane);
+
+
+    // Main Asset Surface Geometry
+    const geometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, gridSize.width - 1, gridSize.height - 1);
     const colors: number[] = [];
 
+    const positions = geometry.attributes.position;
     for (let i = 0; i < positions.count; i++) {
-        const x = Math.round(positions.getX(i) + gridSize.width / 2)
-        const z_plane = Math.round(positions.getZ(i) + gridSize.height / 2)
-        const point = dataMap.get(`${x},${z_plane}`)
+        const x = positions.getX(i) + gridSize.width / 2;
+        const z_plane = positions.getZ(i) + gridSize.height / 2; // In plane geom, z is our y
+        const point = dataMapRef.current.get(`${Math.round(x)},${Math.round(z_plane)}`);
         
-        let color: THREE.Color;
+        const thickness = point?.thickness ?? nominalThickness;
+        const y_pos = thickness * zScale; // Height based on thickness
+        positions.setY(i, y_pos);
 
-        // We only want to modify the top surface of the box
-        if (positions.getY(i) > 0) {
-            const thickness = point?.thickness ?? nominalThickness
-            const percentage = point?.percentage ?? 100
-
-            // The "top" of our box is at y = boxDepth / 2.
-            // We adjust this based on deviation from nominal.
-            // Wall loss (thickness < nominal) should go down.
-            const y_pos = (boxDepth / 2) + ((thickness - nominalThickness) * zScale);
-            positions.setY(i, y_pos);
-            color = getColor(percentage);
-        } else {
-            // Color for sides and bottom
-            color = getColor(100); // Assume healthy for other faces
-        }
+        const color = getColor(point?.percentage ?? 100);
         colors.push(color.r, color.g, color.b);
     }
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: false })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(gridSize.width / 2, 0, gridSize.height / 2)
-    scene.add(mesh)
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(gridSize.width / 2, 0, gridSize.height / 2);
+    mesh.rotation.x = -Math.PI / 2;
+    scene.add(mesh);
     meshRef.current = mesh;
-    
-    // Wireframe for the mesh
-    const wireframeGeom = new THREE.WireframeGeometry(geometry);
-    const wireframeMat = new THREE.LineBasicMaterial({ color: 0x333333, linewidth: 1, transparent: true, opacity: 0.2 });
-    const wireframe = new THREE.LineSegments(wireframeGeom, wireframeMat);
+
+    // Wireframe Overlay
+    const wireframeMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1, transparent: true, opacity: 0.2 });
+    const wireframe = new THREE.LineSegments(new THREE.WireframeGeometry(geometry), wireframeMat);
+    wireframe.rotation.x = -Math.PI / 2;
     wireframe.position.set(gridSize.width / 2, 0, gridSize.height / 2);
     scene.add(wireframe);
 
-    // Reference Plane (at nominal thickness level)
+    // Reference Plane
     const refPlaneGeom = new THREE.PlaneGeometry(gridSize.width * 1.1, gridSize.height * 1.1);
-    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x1e90ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
     const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
     refPlane.rotation.x = -Math.PI / 2;
-    refPlane.position.set(gridSize.width / 2, boxDepth/2, gridSize.height / 2); // Position at nominal height
+    refPlane.position.set(gridSize.width / 2, nominalThickness * zScale, gridSize.height / 2);
     refPlane.visible = showReference;
     scene.add(refPlane);
-
-    // Grid Helper
-    const gridHelper = new THREE.GridHelper(Math.max(gridSize.width, gridSize.height), 10);
-    gridHelper.position.set(gridSize.width / 2, -boxDepth/2, gridSize.height / 2)
-    scene.add(gridHelper);
-
-    // Axes Helper
-    const axesHelper = new THREE.AxesHelper(Math.max(gridSize.width, gridSize.height) * 0.2);
-    axesHelper.position.set(0, -boxDepth/2 + 0.1, 0); // Slightly above the grid
-    scene.add(axesHelper);
-
-
+    
     // Min/Max Markers
     const minMaxGroup = new THREE.Group();
     const minPoint = processedData.find(p => p.thickness === minThickness)
     if(minPoint){
         const minMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        const y_pos = (boxDepth/2) + (minPoint.thickness - nominalThickness) * zScale;
-        minMarker.position.set(minPoint.x, y_pos, minPoint.y);
+        minMarker.position.set(minPoint.x, minPoint.thickness * zScale, minPoint.y);
         minMaxGroup.add(minMarker);
     }
     const maxPoint = processedData.find(p => p.thickness === maxThickness)
     if(maxPoint){
         const maxMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
-        const y_pos = (boxDepth/2) + (maxPoint.thickness - nominalThickness) * zScale;
-        maxMarker.position.set(maxPoint.x, y_pos, maxPoint.y);
+        maxMarker.position.set(maxPoint.x, maxPoint.thickness * zScale, maxPoint.y);
         minMaxGroup.add(maxMarker);
     }
     minMaxGroup.visible = showMinMax;
@@ -172,19 +180,16 @@ export function ThreeDeeViewTab() {
     const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/80, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
     selectedMarker.visible = false;
     scene.add(selectedMarker);
-
-
+    
     const animate = () => {
       requestAnimationFrame(animate)
       controls.update()
       
-      // Update selected marker position
       if (selectedPoint) {
-          const pointData = dataMap.get(`${selectedPoint.x},${selectedPoint.y}`);
+          const pointData = dataMapRef.current.get(`${selectedPoint.x},${selectedPoint.y}`);
           if (pointData) {
               const thickness = pointData.thickness ?? nominalThickness;
-              const y_pos = (boxDepth/2) + (thickness - nominalThickness) * zScale;
-              selectedMarker.position.set(selectedPoint.x, y_pos, selectedPoint.y);
+              selectedMarker.position.set(selectedPoint.x, thickness * zScale, selectedPoint.y);
               selectedMarker.visible = true;
           }
       } else {
@@ -204,7 +209,6 @@ export function ThreeDeeViewTab() {
     }
     window.addEventListener('resize', handleResize)
 
-    // Hover logic
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -219,18 +223,10 @@ export function ThreeDeeViewTab() {
         
         if (intersects.length > 0) {
             const intersect = intersects[0];
-            const face = intersect.face;
-            if (!face) {
-                setHoveredPoint(null);
-                return;
-            }
-            
-            // Get coordinates from the intersection point on the mesh
             const worldPoint = intersect.point;
-            meshRef.current?.worldToLocal(worldPoint);
             
-            const gridX = Math.round(worldPoint.x + gridSize.width / 2);
-            const gridY = Math.round(worldPoint.z + gridSize.height / 2);
+            const gridX = Math.round(worldPoint.x);
+            const gridY = Math.round(worldPoint.z);
             
             const pointData = dataMapRef.current.get(`${gridX},${gridY}`);
 
@@ -267,7 +263,7 @@ export function ThreeDeeViewTab() {
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
         const { gridSize } = inspectionResult.stats;
-        cameraRef.current.position.set(gridSize.width / 2, gridSize.height * 0.75, gridSize.width * 1.2);
+        cameraRef.current.position.set(gridSize.width * 0.9, gridSize.height * 1.2, gridSize.width * 1.4);
         controlsRef.current.target.set(gridSize.width / 2, 0, gridSize.height / 2);
         controlsRef.current.update();
     }
@@ -278,7 +274,7 @@ export function ThreeDeeViewTab() {
       <div className="md:col-span-3 h-full relative">
         <Card className="h-full flex flex-col">
           <CardHeader>
-            <CardTitle className="font-headline">3D Heightmap View</CardTitle>
+            <CardTitle className="font-headline">3D Surface Plot</CardTitle>
           </CardHeader>
           <CardContent className="flex-grow p-0">
             <div ref={mountRef} className="w-full h-full" />
