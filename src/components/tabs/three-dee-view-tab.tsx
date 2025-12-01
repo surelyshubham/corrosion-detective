@@ -55,11 +55,11 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
         const min = stats.minThickness;
         const max = stats.maxThickness;
         const levels = [
-            { pct: 1, label: `${max.toFixed(2)}mm (Max)`, color: getNormalizedColor(1)?.getStyle() },
-            { pct: 0.75, label: '', color: getNormalizedColor(0.75)?.getStyle() },
-            { pct: 0.5, label: `${((max + min) / 2).toFixed(2)}mm`, color: getNormalizedColor(0.5)?.getStyle() },
-            { pct: 0.25, label: '', color: getNormalizedColor(0.25)?.getStyle() },
-            { pct: 0, label: `${min.toFixed(2)}mm (Min)`, color: getNormalizedColor(0)?.getStyle() },
+            { pct: 1, label: `${max.toFixed(2)}mm (Max)` },
+            { pct: 0.75, label: '' },
+            { pct: 0.5, label: `${((max + min) / 2).toFixed(2)}mm` },
+            { pct: 0.25, label: '' },
+            { pct: 0, label: `${min.toFixed(2)}mm (Min)` },
         ];
         return (
              <>
@@ -67,7 +67,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
                 <div className="flex flex-col-reverse">
                 {levels.map(l => (
                     <div key={l.pct} className="flex items-center gap-2 text-xs">
-                        <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: l.color }} />
+                        <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: getNormalizedColor(l.pct)?.getStyle() }} />
                         <span>{l.label}</span>
                     </div>
                 ))}
@@ -77,10 +77,15 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     }
 
     return (
-        <div className="absolute bottom-2 left-2 bg-card/80 p-2 rounded-md text-card-foreground border text-xs">
-            {mode === 'mm' ? renderMmLegend() : renderPercentLegend()}
-            <div className="text-xs text-muted-foreground mt-1">ND: Gray</div>
-        </div>
+        <Card className="bg-card/90">
+            <CardHeader className="p-3">
+                 <CardTitle className="text-base font-headline">Legend</CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 text-xs">
+                {mode === 'mm' ? renderMmLegend() : renderPercentLegend()}
+                <div className="text-xs text-muted-foreground mt-1">ND: Gray</div>
+            </CardContent>
+        </Card>
     )
 }
 
@@ -201,9 +206,18 @@ export function ThreeDeeViewTab() {
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
     dirLight.position.set(VISUAL_WIDTH, visualHeight*2, zScale * 3)
     scene.add(dirLight)
-    
-    const gridHelper = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x888888)
-    scene.add(gridHelper);
+
+    // AXES and GRIDS
+    const gridContainer = new THREE.Group();
+    const mainGrid = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444);
+    mainGrid.rotation.x = Math.PI / 2;
+    gridContainer.add(mainGrid);
+
+    const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
+    axesHelper.position.set(-VISUAL_WIDTH/2, -visualHeight/2, 0);
+    gridContainer.add(axesHelper);
+    scene.add(gridContainer);
+    gridContainer.rotation.x = -Math.PI / 2;
 
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
@@ -368,9 +382,6 @@ export function ThreeDeeViewTab() {
             <div ref={mountRef} className="w-full h-full" />
           </CardContent>
         </Card>
-        {stats && nominalThickness && (
-          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
-        )}
         {hoveredPoint && (
           <div
             className="absolute p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border"
@@ -420,6 +431,9 @@ export function ThreeDeeViewTab() {
             </div>
           </CardContent>
         </Card>
+        {stats && nominalThickness && (
+          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
+        )}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-headline">Camera</CardTitle>
@@ -434,3 +448,5 @@ export function ThreeDeeViewTab() {
     </div>
   )
 }
+
+    

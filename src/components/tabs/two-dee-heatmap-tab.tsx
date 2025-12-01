@@ -73,16 +73,21 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     }
 
     return (
-        <div className="absolute top-2 left-2 bg-card/80 p-2 rounded-md text-card-foreground border text-xs z-10 pointer-events-none">
+        <Card className="mt-4">
+          <CardHeader className="p-3">
+             <CardTitle className="text-base font-headline">Legend</CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0 text-xs">
             {mode === 'mm' ? renderMmLegend() : renderPercentLegend()}
             <div className="text-xs text-muted-foreground mt-1">ND: Gray</div>
-        </div>
+          </CardContent>
+        </Card>
     )
 }
 
 const getNiceInterval = (range: number, maxTicks: number): number => {
     const roughStep = range / maxTicks;
-    const goodSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+    const goodSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
     const step = goodSteps.find(s => s > roughStep) || goodSteps[goodSteps.length - 1];
     return step;
 };
@@ -117,20 +122,38 @@ export function TwoDeeHeatmapTab() {
     const canvas = canvasRef.current;
     if (!canvas || !gridSize || !containerRef.current) return;
     
+    const dpr = window.devicePixelRatio || 1;
     const containerWidth = containerRef.current.clientWidth;
     const containerHeight = containerRef.current.clientHeight;
 
+    canvas.width = containerWidth * dpr;
+    canvas.height = containerHeight * dpr;
+    canvas.style.width = `${containerWidth}px`;
+    canvas.style.height = `${containerHeight}px`;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    
+    ctx.scale(dpr, dpr);
 
     const { width: cols, height: rows } = gridSize;
-    const baseCellSize = (containerWidth - AXIS_SIZE) / cols;
+    const aspect = cols / rows;
+    
+    const canvasAspect = containerWidth / containerHeight;
+    
+    let worldWidth, worldHeight;
+    if (canvasAspect > aspect) { // Canvas is wider than data
+        worldHeight = rows;
+        worldWidth = worldHeight * canvasAspect;
+    } else { // Canvas is taller or same aspect
+        worldWidth = cols;
+        worldHeight = worldWidth / canvasAspect;
+    }
 
-    canvas.width = containerWidth - AXIS_SIZE;
-    canvas.height = containerHeight - AXIS_SIZE;
+    const baseCellSize = containerWidth / worldWidth;
 
     ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, containerWidth, containerHeight);
     
     ctx.translate(transform.offsetX, transform.offsetY);
     ctx.scale(transform.scale, transform.scale);
@@ -211,7 +234,7 @@ export function TwoDeeHeatmapTab() {
     setHoveredPoint(null);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isPanning) {
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
@@ -226,11 +249,25 @@ export function TwoDeeHeatmapTab() {
     };
     
     const containerWidth = containerRef.current.clientWidth;
-    const baseCellSize = (containerWidth - AXIS_SIZE) / gridSize.width;
+    const containerHeight = containerRef.current.clientHeight;
+
+    const { width: cols, height: rows } = gridSize;
+    const aspect = cols / rows;
+    const canvasAspect = containerWidth / containerHeight;
+    let worldWidth, worldHeight;
+    if (canvasAspect > aspect) { 
+        worldHeight = rows;
+        worldWidth = worldHeight * canvasAspect;
+    } else {
+        worldWidth = cols;
+        worldHeight = worldWidth / canvasAspect;
+    }
+    const baseCellSize = containerWidth / worldWidth;
+
     const rect = canvasRef.current.getBoundingClientRect();
     
-    const x = (e.clientX - rect.left - transform.offsetX) / transform.scale;
-    const y = (e.clientY - rect.top - transform.offsetY) / transform.scale;
+    const x = (e.clientX - rect.left - AXIS_SIZE - transform.offsetX) / transform.scale;
+    const y = (e.clientY - rect.top - AXIS_SIZE - transform.offsetY) / transform.scale;
 
     const gridX = Math.floor(x / baseCellSize);
     const gridY = Math.floor(y / baseCellSize);
@@ -247,15 +284,15 @@ export function TwoDeeHeatmapTab() {
     }
   };
   
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (!canvasRef.current) return;
     const scaleAmount = 1.1;
     const zoomFactor = e.deltaY < 0 ? scaleAmount : 1 / scaleAmount;
     
     const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const mouseX = e.clientX - rect.left - AXIS_SIZE;
+    const mouseY = e.clientY - rect.top - AXIS_SIZE;
     
     setTransform(t => {
       const newScale = Math.max(0.1, t.scale * zoomFactor);
@@ -269,14 +306,29 @@ export function TwoDeeHeatmapTab() {
     setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
   };
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!gridSize || !containerRef.current || !canvasRef.current) return;
+    
     const containerWidth = containerRef.current.clientWidth;
-    const baseCellSize = (containerWidth - AXIS_SIZE) / gridSize.width;
+    const containerHeight = containerRef.current.clientHeight;
+
+    const { width: cols, height: rows } = gridSize;
+    const aspect = cols / rows;
+    const canvasAspect = containerWidth / containerHeight;
+    let worldWidth, worldHeight;
+    if (canvasAspect > aspect) { 
+        worldHeight = rows;
+        worldWidth = worldHeight * canvasAspect;
+    } else {
+        worldWidth = cols;
+        worldHeight = worldWidth / canvasAspect;
+    }
+    const baseCellSize = containerWidth / worldWidth;
+
     const rect = canvasRef.current.getBoundingClientRect();
     
-    const x = (e.clientX - rect.left - transform.offsetX) / transform.scale;
-    const y = (e.clientY - rect.top - transform.offsetY) / transform.scale;
+    const x = (e.clientX - rect.left - AXIS_SIZE - transform.offsetX) / transform.scale;
+    const y = (e.clientY - rect.top - AXIS_SIZE - transform.offsetY) / transform.scale;
 
     const gridX = Math.floor(x / baseCellSize);
     const gridY = Math.floor(y / baseCellSize);
@@ -290,13 +342,26 @@ export function TwoDeeHeatmapTab() {
   const renderXAxis = () => {
     if (!gridSize || !containerRef.current) return null;
     const containerWidth = containerRef.current.clientWidth;
-    const baseCellSize = (containerWidth - AXIS_SIZE) / gridSize.width;
+    const containerHeight = containerRef.current.clientHeight;
+    
+    const { width: cols, height: rows } = gridSize;
+    const aspect = cols / rows;
+    const canvasAspect = (containerWidth - AXIS_SIZE) / (containerHeight - AXIS_SIZE);
+    let worldWidth, worldHeight;
+    if (canvasAspect > aspect) { 
+        worldHeight = rows;
+        worldWidth = worldHeight * canvasAspect;
+    } else {
+        worldWidth = cols;
+        worldHeight = worldWidth / canvasAspect;
+    }
+    const baseCellSize = (containerWidth-AXIS_SIZE) / worldWidth;
     
     const maxTicks = Math.floor((containerWidth - AXIS_SIZE) / 50);
-    const interval = getNiceInterval(gridSize.width / transform.scale, maxTicks);
+    const interval = getNiceInterval(cols / transform.scale, maxTicks);
 
     const ticks = [];
-    for(let i = 0; i < gridSize.width; i++) {
+    for(let i = 0; i < cols; i++) {
         if (i % interval === 0) {
             const xPos = transform.offsetX + (i * baseCellSize * transform.scale);
             if (xPos > -baseCellSize * transform.scale && xPos < containerWidth - AXIS_SIZE) {
@@ -306,7 +371,7 @@ export function TwoDeeHeatmapTab() {
     }
 
     return (
-        <div className="absolute top-0 left-[40px] right-0 h-[40px] border-b pointer-events-none">
+        <div className="absolute top-0 left-[40px] right-0 h-[40px] border-b pointer-events-none bg-card">
             {ticks.map(tick => (
                 <div key={tick.label} className="absolute top-0 text-xs text-muted-foreground" style={{ transform: `translateX(${tick.pos}px)`}}>
                     <span className="absolute top-[22px] -translate-x-1/2">{tick.label}</span>
@@ -320,15 +385,26 @@ export function TwoDeeHeatmapTab() {
   const renderYAxis = () => {
      if (!gridSize || !containerRef.current) return null;
     const containerHeight = containerRef.current.clientHeight;
+    const containerWidth = containerRef.current.clientWidth;
+
+    const { width: cols, height: rows } = gridSize;
+    const aspect = cols / rows;
+    const canvasAspect = (containerWidth - AXIS_SIZE) / (containerHeight - AXIS_SIZE);
+    let worldWidth, worldHeight;
+    if (canvasAspect > aspect) { 
+        worldHeight = rows;
+        worldWidth = worldHeight * canvasAspect;
+    } else {
+        worldWidth = cols;
+        worldHeight = worldWidth / canvasAspect;
+    }
+    const baseCellSize = (containerWidth-AXIS_SIZE) / worldWidth;
     
     const maxTicks = Math.floor((containerHeight - AXIS_SIZE) / 40);
-    const interval = getNiceInterval(gridSize.height / transform.scale, maxTicks);
-    
-    const containerWidth = containerRef.current.clientWidth;
-    const baseCellSize = (containerWidth - AXIS_SIZE) / gridSize.width;
+    const interval = getNiceInterval(rows / transform.scale, maxTicks);
 
     const ticks = [];
-    for(let i = 0; i < gridSize.height; i++) {
+    for(let i = 0; i < rows; i++) {
         if (i % interval === 0) {
             const yPos = transform.offsetY + (i * baseCellSize * transform.scale);
              if (yPos > -baseCellSize * transform.scale && yPos < containerHeight - AXIS_SIZE) {
@@ -337,7 +413,7 @@ export function TwoDeeHeatmapTab() {
         }
     }
     return (
-        <div className="absolute left-0 top-[40px] bottom-0 w-[40px] border-r pointer-events-none">
+        <div className="absolute left-0 top-[40px] bottom-0 w-[40px] border-r pointer-events-none bg-card">
             {ticks.map(tick => (
                 <div key={tick.label} className="absolute left-0 text-xs text-muted-foreground" style={{ transform: `translateY(${tick.pos}px)`}}>
                     <span className="absolute left-[20px] top-0 -translate-y-1/2 -translate-x-full">{tick.label}</span>
@@ -357,24 +433,24 @@ export function TwoDeeHeatmapTab() {
         <CardHeader>
           <CardTitle className="font-headline">2D Heatmap</CardTitle>
         </CardHeader>
-        <CardContent ref={containerRef} className="flex-grow relative p-0 overflow-hidden bg-muted/20">
+        <CardContent 
+            ref={containerRef}
+            className="flex-grow relative p-0 overflow-hidden bg-muted/20 cursor-grab active:cursor-grabbing"
+            onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            onWheel={handleWheel}
+            onDoubleClick={handleDoubleClick}
+            onClick={handleClick}
+            onContextMenu={(e) => e.preventDefault()}
+        >
             {renderXAxis()}
             {renderYAxis()}
             <canvas
                 ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
-                onWheel={handleWheel}
-                onDoubleClick={handleDoubleClick}
-                onClick={handleClick}
-                onContextMenu={(e) => e.preventDefault()}
-                className="absolute top-[40px] left-[40px] cursor-grab active:cursor-grabbing"
+                className="absolute top-[40px] left-[40px]"
             />
-            {stats && nominalThickness && (
-              <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
-            )}
             {hoveredPoint && (
               <div
                 className="absolute p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border z-20"
@@ -416,6 +492,9 @@ export function TwoDeeHeatmapTab() {
                 </RadioGroup>
             </CardContent>
         </Card>
+        {stats && nominalThickness && (
+          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
+        )}
       </div>
     </div>
   )
