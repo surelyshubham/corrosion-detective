@@ -109,6 +109,7 @@ export function TwoDeeHeatmapTab() {
   const effTRange = (maxEffT && minEffT) ? maxEffT - minEffT : 0;
   
   const AXIS_SIZE = 40;
+  const CELL_SIZE = 6; // Base cell size
 
   const dataMap = React.useMemo(() => {
     const map = new Map<string, any>();
@@ -126,41 +127,26 @@ export function TwoDeeHeatmapTab() {
     const containerWidth = containerRef.current.clientWidth;
     const containerHeight = containerRef.current.clientHeight;
 
-    canvas.width = containerWidth * dpr;
-    canvas.height = containerHeight * dpr;
-    canvas.style.width = `${containerWidth}px`;
-    canvas.style.height = `${containerHeight}px`;
+    // The canvas is always its "natural" size, the container div handles scrolling
+    const canvasWidth = gridSize.width * CELL_SIZE;
+    const canvasHeight = gridSize.height * CELL_SIZE;
+    
+    canvas.width = canvasWidth * dpr;
+    canvas.height = canvasHeight * dpr;
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
     ctx.scale(dpr, dpr);
 
-    const { width: cols, height: rows } = gridSize;
-    const aspect = cols / rows;
-    
-    const canvasAspect = containerWidth / containerHeight;
-    
-    let worldWidth, worldHeight;
-    if (canvasAspect > aspect) { // Canvas is wider than data
-        worldHeight = rows;
-        worldWidth = worldHeight * canvasAspect;
-    } else { // Canvas is taller or same aspect
-        worldWidth = cols;
-        worldHeight = worldWidth / canvasAspect;
-    }
+    // No transforms here on the main context, they happen on a wrapper group if needed
+    // but for simple pan/zoom, we manage it via scroll and scale transform on the canvas element style
 
-    const baseCellSize = containerWidth / worldWidth;
-
-    ctx.save();
-    ctx.clearRect(0, 0, containerWidth, containerHeight);
-    
-    ctx.translate(transform.offsetX, transform.offsetY);
-    ctx.scale(transform.scale, transform.scale);
-    
     // Draw Heatmap
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < gridSize.height; y++) {
+      for (let x = 0; x < gridSize.width; x++) {
         const point = dataMap.get(`${x},${y}`);
         let color: string;
         
@@ -176,24 +162,24 @@ export function TwoDeeHeatmapTab() {
         }
 
         ctx.fillStyle = color;
-        ctx.fillRect(x * baseCellSize, y * baseCellSize, baseCellSize, baseCellSize);
+        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
       }
     }
     
     // Draw Bounded Grid Lines
     if (transform.scale > 5) {
       ctx.strokeStyle = "rgba(200, 200, 200, 0.2)";
-      ctx.lineWidth = 1 / transform.scale;
-      for (let x = 0; x <= cols; x++) {
+      ctx.lineWidth = 1; // It's always 1px regardless of zoom
+      for (let x = 0; x <= gridSize.width; x++) {
         ctx.beginPath();
-        ctx.moveTo(x * baseCellSize, 0);
-        ctx.lineTo(x * baseCellSize, rows * baseCellSize);
+        ctx.moveTo(x * CELL_SIZE, 0);
+        ctx.lineTo(x * CELL_SIZE, canvasHeight);
         ctx.stroke();
       }
-      for (let y = 0; y <= rows; y++) {
+      for (let y = 0; y <= gridSize.height; y++) {
         ctx.beginPath();
-        ctx.moveTo(0, y * baseCellSize);
-        ctx.lineTo(cols * baseCellSize, y * baseCellSize);
+        ctx.moveTo(0, y * CELL_SIZE);
+        ctx.lineTo(canvasWidth, y * CELL_SIZE);
         ctx.stroke();
       }
     }
@@ -201,44 +187,58 @@ export function TwoDeeHeatmapTab() {
     // Draw selection outline
     if (selectedPoint) {
         ctx.strokeStyle = '#00ffff'; // Cyan
-        ctx.lineWidth = 2 / transform.scale;
-        ctx.strokeRect(selectedPoint.x * baseCellSize, selectedPoint.y * baseCellSize, baseCellSize, baseCellSize);
+        ctx.lineWidth = 2; // Always 2px
+        ctx.strokeRect(selectedPoint.x * CELL_SIZE, selectedPoint.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
     }
     
-    ctx.restore();
-
-  }, [gridSize, colorMode, dataMap, minEffT, effTRange, transform, selectedPoint]);
-
-  useEffect(() => {
-    if(!containerRef.current) return;
-    const resizeObserver = new ResizeObserver(() => draw());
-    resizeObserver.observe(containerRef.current);
-    return () => resizeObserver.disconnect();
-  }, [draw]);
+  }, [gridSize, colorMode, dataMap, minEffT, effTRange, transform.scale, selectedPoint]);
 
   useEffect(() => {
     draw();
   }, [draw]);
 
+  const handleContainerResize = useCallback(() => {
+    draw();
+  }, [draw]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const resizeObserver = new ResizeObserver(handleContainerResize);
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [handleContainerResize]);
+
 
   // --- Interaction Handlers ---
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button !== 0) return;
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !containerRef.current) return;
     setIsPanning(true);
-    setLastPanPoint({ x: e.clientX, y: e.clientY });
+    setLastPanPoint({ 
+        x: e.clientX, 
+        y: e.clientY 
+    });
+    containerRef.current.style.cursor = 'grabbing';
   };
   
-  const handleMouseUp = () => setIsPanning(false);
+  const handleMouseUp = () => {
+    if (!containerRef.current) return;
+    setIsPanning(false);
+    containerRef.current.style.cursor = 'grab';
+  };
+
   const handleMouseLeave = () => {
+     if (!containerRef.current) return;
     setIsPanning(false);
     setHoveredPoint(null);
+    containerRef.current.style.cursor = 'grab';
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isPanning) {
+    if (isPanning && containerRef.current) {
         const dx = e.clientX - lastPanPoint.x;
         const dy = e.clientY - lastPanPoint.y;
-        setTransform(t => ({ ...t, offsetX: t.offsetX + dx, offsetY: t.offsetY + dy }));
+        containerRef.current.scrollLeft -= dx;
+        containerRef.current.scrollTop -= dy;
         setLastPanPoint({ x: e.clientX, y: e.clientY });
     }
     
@@ -247,30 +247,12 @@ export function TwoDeeHeatmapTab() {
         setHoveredPoint(null);
         return;
     };
-    
-    const containerWidth = containerRef.current.clientWidth;
-    const containerHeight = containerRef.current.clientHeight;
-
-    const { width: cols, height: rows } = gridSize;
-    const aspect = cols / rows;
-    const canvasAspect = containerWidth / containerHeight;
-    let worldWidth, worldHeight;
-    if (canvasAspect > aspect) { 
-        worldHeight = rows;
-        worldWidth = worldHeight * canvasAspect;
-    } else {
-        worldWidth = cols;
-        worldHeight = worldWidth / canvasAspect;
-    }
-    const baseCellSize = containerWidth / worldWidth;
-
     const rect = canvasRef.current.getBoundingClientRect();
-    
-    const x = (e.clientX - rect.left - AXIS_SIZE - transform.offsetX) / transform.scale;
-    const y = (e.clientY - rect.top - AXIS_SIZE - transform.offsetY) / transform.scale;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    const gridX = Math.floor(x / baseCellSize);
-    const gridY = Math.floor(y / baseCellSize);
+    const gridX = Math.floor(x / (CELL_SIZE * transform.scale));
+    const gridY = Math.floor(y / (CELL_SIZE * transform.scale));
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
         const pointData = dataMap.get(`${gridX},${gridY}`);
@@ -286,143 +268,58 @@ export function TwoDeeHeatmapTab() {
   
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (!canvasRef.current) return;
+    if (!containerRef.current) return;
+
     const scaleAmount = 1.1;
-    const zoomFactor = e.deltaY < 0 ? scaleAmount : 1 / scaleAmount;
+    const newScale = e.deltaY < 0 ? transform.scale * scaleAmount : transform.scale / scaleAmount;
+    const clampedScale = Math.max(0.2, Math.min(newScale, 20)); // Zoom limits
     
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left - AXIS_SIZE;
-    const mouseY = e.clientY - rect.top - AXIS_SIZE;
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const scrollLeft = containerRef.current.scrollLeft;
+    const scrollTop = containerRef.current.scrollTop;
     
-    setTransform(t => {
-      const newScale = Math.max(0.1, t.scale * zoomFactor);
-      const newOffsetX = mouseX - (mouseX - t.offsetX) * zoomFactor;
-      const newOffsetY = mouseY - (mouseY - t.offsetY) * zoomFactor;
-      return { scale: newScale, offsetX: newOffsetX, offsetY: newOffsetY };
+    const worldX = (scrollLeft + mouseX) / transform.scale;
+    const worldY = (scrollTop + mouseY) / transform.scale;
+
+    const newScrollLeft = worldX * clampedScale - mouseX;
+    const newScrollTop = worldY * clampedScale - mouseY;
+
+    setTransform({ ...transform, scale: clampedScale });
+
+    // Apply new scroll positions after state has updated
+    requestAnimationFrame(() => {
+        if(containerRef.current){
+            containerRef.current.scrollLeft = newScrollLeft;
+            containerRef.current.scrollTop = newScrollTop;
+        }
     });
   };
 
   const handleDoubleClick = () => {
     setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
+    if(containerRef.current){
+        containerRef.current.scrollLeft = 0;
+        containerRef.current.scrollTop = 0;
+    }
   };
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!gridSize || !containerRef.current || !canvasRef.current) return;
     
-    const containerWidth = containerRef.current.clientWidth;
-    const containerHeight = containerRef.current.clientHeight;
-
-    const { width: cols, height: rows } = gridSize;
-    const aspect = cols / rows;
-    const canvasAspect = containerWidth / containerHeight;
-    let worldWidth, worldHeight;
-    if (canvasAspect > aspect) { 
-        worldHeight = rows;
-        worldWidth = worldHeight * canvasAspect;
-    } else {
-        worldWidth = cols;
-        worldHeight = worldWidth / canvasAspect;
-    }
-    const baseCellSize = containerWidth / worldWidth;
-
     const rect = canvasRef.current.getBoundingClientRect();
-    
-    const x = (e.clientX - rect.left - AXIS_SIZE - transform.offsetX) / transform.scale;
-    const y = (e.clientY - rect.top - AXIS_SIZE - transform.offsetY) / transform.scale;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    const gridX = Math.floor(x / baseCellSize);
-    const gridY = Math.floor(y / baseCellSize);
+    const gridX = Math.floor(x / (CELL_SIZE * transform.scale));
+    const gridY = Math.floor(y / (CELL_SIZE * transform.scale));
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
         setSelectedPoint({ x: gridX, y: gridY });
     }
   }
-
-  // --- Axis Rendering ---
-  const renderXAxis = () => {
-    if (!gridSize || !containerRef.current) return null;
-    const containerWidth = containerRef.current.clientWidth;
-    const containerHeight = containerRef.current.clientHeight;
-    
-    const { width: cols, height: rows } = gridSize;
-    const aspect = cols / rows;
-    const canvasAspect = (containerWidth - AXIS_SIZE) / (containerHeight - AXIS_SIZE);
-    let worldWidth, worldHeight;
-    if (canvasAspect > aspect) { 
-        worldHeight = rows;
-        worldWidth = worldHeight * canvasAspect;
-    } else {
-        worldWidth = cols;
-        worldHeight = worldWidth / canvasAspect;
-    }
-    const baseCellSize = (containerWidth-AXIS_SIZE) / worldWidth;
-    
-    const maxTicks = Math.floor((containerWidth - AXIS_SIZE) / 50);
-    const interval = getNiceInterval(cols / transform.scale, maxTicks);
-
-    const ticks = [];
-    for(let i = 0; i < cols; i++) {
-        if (i % interval === 0) {
-            const xPos = transform.offsetX + (i * baseCellSize * transform.scale);
-            if (xPos > -baseCellSize * transform.scale && xPos < containerWidth - AXIS_SIZE) {
-                ticks.push({ label: i, pos: xPos });
-            }
-        }
-    }
-
-    return (
-        <div className="absolute top-0 left-[40px] right-0 h-[40px] border-b pointer-events-none bg-card">
-            {ticks.map(tick => (
-                <div key={tick.label} className="absolute top-0 text-xs text-muted-foreground" style={{ transform: `translateX(${tick.pos}px)`}}>
-                    <span className="absolute top-[22px] -translate-x-1/2">{tick.label}</span>
-                    <div className="absolute top-[18px] w-px h-1 bg-muted-foreground" />
-                </div>
-            ))}
-        </div>
-    );
-  };
-
-  const renderYAxis = () => {
-     if (!gridSize || !containerRef.current) return null;
-    const containerHeight = containerRef.current.clientHeight;
-    const containerWidth = containerRef.current.clientWidth;
-
-    const { width: cols, height: rows } = gridSize;
-    const aspect = cols / rows;
-    const canvasAspect = (containerWidth - AXIS_SIZE) / (containerHeight - AXIS_SIZE);
-    let worldWidth, worldHeight;
-    if (canvasAspect > aspect) { 
-        worldHeight = rows;
-        worldWidth = worldHeight * canvasAspect;
-    } else {
-        worldWidth = cols;
-        worldHeight = worldWidth / canvasAspect;
-    }
-    const baseCellSize = (containerWidth-AXIS_SIZE) / worldWidth;
-    
-    const maxTicks = Math.floor((containerHeight - AXIS_SIZE) / 40);
-    const interval = getNiceInterval(rows / transform.scale, maxTicks);
-
-    const ticks = [];
-    for(let i = 0; i < rows; i++) {
-        if (i % interval === 0) {
-            const yPos = transform.offsetY + (i * baseCellSize * transform.scale);
-             if (yPos > -baseCellSize * transform.scale && yPos < containerHeight - AXIS_SIZE) {
-                ticks.push({ label: i, pos: yPos });
-            }
-        }
-    }
-    return (
-        <div className="absolute left-0 top-[40px] bottom-0 w-[40px] border-r pointer-events-none bg-card">
-            {ticks.map(tick => (
-                <div key={tick.label} className="absolute left-0 text-xs text-muted-foreground" style={{ transform: `translateY(${tick.pos}px)`}}>
-                    <span className="absolute left-[20px] top-0 -translate-y-1/2 -translate-x-full">{tick.label}</span>
-                    <div className="absolute left-[35px] h-px w-1 bg-muted-foreground" />
-                </div>
-            ))}
-        </div>
-    );
-  };
 
   // --- Render ---
   if (!inspectionResult) return null
@@ -435,7 +332,7 @@ export function TwoDeeHeatmapTab() {
         </CardHeader>
         <CardContent 
             ref={containerRef}
-            className="flex-grow relative p-0 overflow-hidden bg-muted/20 cursor-grab active:cursor-grabbing"
+            className="flex-grow relative p-0 overflow-auto bg-muted/20 cursor-grab"
             onMouseMove={handleMouseMove}
             onMouseDown={handleMouseDown}
             onMouseUp={handleMouseUp}
@@ -445,19 +342,25 @@ export function TwoDeeHeatmapTab() {
             onClick={handleClick}
             onContextMenu={(e) => e.preventDefault()}
         >
-            {renderXAxis()}
-            {renderYAxis()}
-            <canvas
-                ref={canvasRef}
-                className="absolute top-[40px] left-[40px]"
-            />
+            <div style={{ position: 'relative', width: `${gridSize!.width * CELL_SIZE}px`, height: `${gridSize!.height * CELL_SIZE}px`}}>
+                <canvas
+                    ref={canvasRef}
+                    style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        transformOrigin: 'top left',
+                        transform: `scale(${transform.scale})`,
+                    }}
+                />
+            </div>
+
             {hoveredPoint && (
               <div
-                className="absolute p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border z-20"
+                className="fixed p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border z-20"
                 style={{
-                  left: `${hoveredPoint.clientX}px`,
-                  top: `${hoveredPoint.clientY}px`,
-                  transform: `translate(15px, -100%)`
+                  left: `${hoveredPoint.clientX + 15}px`,
+                  top: `${hoveredPoint.clientY - 30}px`,
                 }}
               >
                 <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
@@ -499,5 +402,3 @@ export function TwoDeeHeatmapTab() {
     </div>
   )
 }
-
-    
