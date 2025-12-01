@@ -15,7 +15,7 @@ import { Camera, Expand, Minimize, Pin, Redo, RefreshCw } from 'lucide-react'
 export function ThreeDeeViewTab() {
   const { inspectionResult, selectedPoint } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
-  const [zScale, setZScale] = useState(1)
+  const [zScale, setZScale] = useState(5) // Increased default scale
   const [showReference, setShowReference] = useState(true)
   const [showMinMax, setShowMinMax] = useState(true)
   
@@ -42,7 +42,7 @@ export function ThreeDeeViewTab() {
 
     // Camera
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000)
-    camera.position.set(gridSize.width / 2, gridSize.height, gridSize.width * 1.2)
+    camera.position.set(gridSize.width / 2, gridSize.height * 0.75, gridSize.width * 1.2)
     cameraRef.current = camera
 
     // Controls
@@ -62,23 +62,29 @@ export function ThreeDeeViewTab() {
     scene.add(directionalLight2)
     
     // Main Asset Geometry
-    const geometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, gridSize.width - 1, gridSize.height - 1)
+    const boxDepth = nominalThickness * 2; // Give it some visual thickness
+    const geometry = new THREE.BoxGeometry(gridSize.width, boxDepth, gridSize.height, gridSize.width - 1, 1, gridSize.height - 1);
     const dataMap = new Map(processedData.map(p => [`${p.x},${p.y}`, p]))
     
     const positions = geometry.attributes.position;
     for (let i = 0; i < positions.count; i++) {
-        const x = Math.round(positions.getX(i) + gridSize.width / 2)
-        const y = Math.round(positions.getY(i) + gridSize.height / 2)
-        const point = dataMap.get(`${x},${y}`)
-        const thickness = point?.thickness ?? nominalThickness
-        const z = (thickness - nominalThickness) * zScale;
-        positions.setZ(i, z);
+        // We only want to modify the top surface of the box
+        if (positions.getY(i) > 0) {
+            const x = Math.round(positions.getX(i) + gridSize.width / 2)
+            const z_plane = Math.round(positions.getZ(i) + gridSize.height / 2)
+            const point = dataMap.get(`${x},${z_plane}`)
+            const thickness = point?.thickness ?? nominalThickness
+            
+            // The "top" of our box is at y = boxDepth / 2.
+            // We adjust this based on deviation from nominal.
+            const y_pos = (boxDepth / 2) + ((thickness - nominalThickness) * zScale);
+            positions.setY(i, y_pos);
+        }
     }
     geometry.computeVertexNormals();
 
     const material = new THREE.MeshStandardMaterial({ color: 0x60a5fa, side: THREE.DoubleSide, flatShading: false })
     const mesh = new THREE.Mesh(geometry, material)
-    mesh.rotation.x = -Math.PI / 2
     mesh.position.set(gridSize.width / 2, 0, gridSize.height / 2)
     scene.add(mesh)
     
@@ -86,7 +92,6 @@ export function ThreeDeeViewTab() {
     const wireframeGeom = new THREE.WireframeGeometry(geometry);
     const wireframeMat = new THREE.LineBasicMaterial({ color: 0x1e3a8a, linewidth: 1, transparent: true, opacity: 0.3 });
     const wireframe = new THREE.LineSegments(wireframeGeom, wireframeMat);
-    wireframe.rotation.x = -Math.PI / 2;
     wireframe.position.set(gridSize.width / 2, 0, gridSize.height / 2);
     scene.add(wireframe);
 
@@ -95,18 +100,18 @@ export function ThreeDeeViewTab() {
     const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
     const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
     refPlane.rotation.x = -Math.PI / 2;
-    refPlane.position.set(gridSize.width / 2, 0, gridSize.height / 2);
+    refPlane.position.set(gridSize.width / 2, boxDepth/2, gridSize.height / 2); // Position at nominal height
     refPlane.visible = showReference;
     scene.add(refPlane);
 
     // Grid Helper
     const gridHelper = new THREE.GridHelper(Math.max(gridSize.width, gridSize.height), 10);
-    gridHelper.position.set(gridSize.width / 2, 0, gridSize.height / 2)
+    gridHelper.position.set(gridSize.width / 2, -boxDepth/2, gridSize.height / 2)
     scene.add(gridHelper);
 
     // Axes Helper
     const axesHelper = new THREE.AxesHelper(Math.max(gridSize.width, gridSize.height) * 0.2);
-    axesHelper.position.set(0, 0.1, 0); // Slightly above the grid
+    axesHelper.position.set(0, -boxDepth/2 + 0.1, 0); // Slightly above the grid
     scene.add(axesHelper);
 
 
@@ -115,13 +120,15 @@ export function ThreeDeeViewTab() {
     const minPoint = processedData.find(p => p.thickness === minThickness)
     if(minPoint){
         const minMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        minMarker.position.set(minPoint.x, (minPoint.thickness - nominalThickness) * zScale, minPoint.y);
+        const y_pos = (boxDepth/2) + (minPoint.thickness - nominalThickness) * zScale;
+        minMarker.position.set(minPoint.x, y_pos, minPoint.y);
         minMaxGroup.add(minMarker);
     }
     const maxPoint = processedData.find(p => p.thickness === maxThickness)
     if(maxPoint){
         const maxMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
-        maxMarker.position.set(maxPoint.x, (maxPoint.thickness - nominalThickness) * zScale, maxPoint.y);
+        const y_pos = (boxDepth/2) + (maxPoint.thickness - nominalThickness) * zScale;
+        maxMarker.position.set(maxPoint.x, y_pos, maxPoint.y);
         minMaxGroup.add(maxMarker);
     }
     minMaxGroup.visible = showMinMax;
@@ -143,7 +150,8 @@ export function ThreeDeeViewTab() {
           const pointData = dataMap.get(`${selectedPoint.x},${selectedPoint.y}`);
           if (pointData) {
               const thickness = pointData.thickness ?? nominalThickness;
-              selectedMarker.position.set(selectedPoint.x, (thickness - nominalThickness) * zScale, selectedPoint.y);
+              const y_pos = (boxDepth/2) + (thickness - nominalThickness) * zScale;
+              selectedMarker.position.set(selectedPoint.x, y_pos, selectedPoint.y);
               selectedMarker.visible = true;
           }
       } else {
@@ -174,7 +182,7 @@ export function ThreeDeeViewTab() {
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
         const { gridSize } = inspectionResult.stats;
-        cameraRef.current.position.set(gridSize.width / 2, gridSize.height, gridSize.width * 1.2);
+        cameraRef.current.position.set(gridSize.width / 2, gridSize.height * 0.75, gridSize.width * 1.2);
         controlsRef.current.target.set(gridSize.width / 2, 0, gridSize.height / 2);
         controlsRef.current.update();
     }
@@ -200,7 +208,7 @@ export function ThreeDeeViewTab() {
           <CardContent className="space-y-6">
             <div className="space-y-3">
               <Label>Z-Axis Scale: {zScale.toFixed(1)}x</Label>
-              <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={0.1} max={15} step={0.1} />
+              <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={0.1} max={25} step={0.1} />
             </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="ref-plane-switch" className="flex items-center gap-2"><Expand className="h-4 w-4" />Show Reference Plane</Label>
@@ -226,5 +234,3 @@ export function ThreeDeeViewTab() {
     </div>
   )
 }
-
-    
