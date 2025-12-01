@@ -131,7 +131,7 @@ export function ThreeDeeViewTab() {
 
         let color: THREE.Color;
         if (colorMode === '%') {
-            const normalized = point?.thickness !== null && thicknessRange > 0
+            const normalized = point && point.thickness !== null && thicknessRange > 0
                 ? (point.thickness - minThickness) / thicknessRange
                 : null;
             color = getNormalizedColor(normalized);
@@ -236,8 +236,8 @@ export function ThreeDeeViewTab() {
       refPlane.position.y = nominalThickness * zScale;
       refPlane.visible = showReference;
 
-      if(minPoint && minMarker){ minMarker.position.set(minPoint.x, minPoint.thickness * zScale, minPoint.y); }
-      if(maxPoint && maxMarker){ maxMarker.position.set(maxPoint.x, maxPoint.thickness * zScale, maxPoint.y); }
+      if(minPoint && minMarker){ minMarker.position.set(minPoint.x, minPoint.thickness! * zScale, minPoint.y); }
+      if(maxPoint && maxMarker){ maxMarker.position.set(maxPoint.x, maxPoint.thickness! * zScale, maxPoint.y); }
       minMaxGroup.visible = showMinMax;
 
       if (selectedPoint) {
@@ -400,3 +400,5 @@ export function ThreeDeeViewTab() {
     </div>
   )
 }
+
+    
