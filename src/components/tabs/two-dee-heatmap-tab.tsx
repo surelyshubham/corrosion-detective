@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useRef, useEffect, useState, useCallback } from 'react'
@@ -5,28 +6,21 @@ import { useInspectionStore } from '@/store/use-inspection-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useResizeDetector } from 'react-resize-detector'
 
-// % Thickness Color
-// >70% Red
-// 61-70% Dark Orange
-// 51-60% Orange
-// 41-50% Yellow
-// 31-40% Light Green
-// 21-30% Green
-// 11-20% Teal
-// 0-10% Blue
-// ND Transparent
-
+// Based on thickness percentage:
+// Red        = 0–20%
+// Orange     = 21–40%
+// Yellow     = 41–60%
+// LightGreen = 61–80%
+// DarkGreen  = 81–100%
 const getColor = (percentage: number | null) => {
     if (percentage === null) return 'rgba(0,0,0,0)'; // Transparent for ND
-    if (percentage > 70) return '#ef4444'; // Red
-    if (percentage > 60) return '#f97316'; // Dark Orange
-    if (percentage > 50) return '#f59e0b'; // Orange
-    if (percentage > 40) return '#eab308'; // Yellow
-    if (percentage > 30) return '#84cc16'; // Light Green
-    if (percentage > 20) return '#22c55e'; // Green
-    if (percentage > 10) return '#14b8a6'; // Teal
-    return '#3b82f6'; // Blue
+    if (percentage <= 20) return '#ff0000'; // Red
+    if (percentage <= 40) return '#ffa500'; // Orange
+    if (percentage <= 60) return '#ffff00'; // Yellow
+    if (percentage <= 80) return '#90ee90'; // LightGreen
+    return '#006400'; // DarkGreen
 };
+
 
 export function TwoDeeHeatmapTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint } = useInspectionStore()
@@ -62,9 +56,9 @@ export function TwoDeeHeatmapTab() {
             ctx.fillRect(i * pixelSizeX, j * pixelSizeX, pixelSizeX, pixelSizeX);
 
             if(selectedPoint && selectedPoint.x === i && selectedPoint.y === j) {
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(i * pixelSizeX, j * pixelSizeX, pixelSizeX, pixelSizeX);
+                ctx.strokeStyle = '#00ffff'; // Cyan highlight
+                ctx.lineWidth = 3;
+                ctx.strokeRect(i * pixelSizeX + 1.5, j * pixelSizeX + 1.5, pixelSizeX - 3, pixelSizeX - 3);
             }
         }
     }
@@ -118,7 +112,7 @@ export function TwoDeeHeatmapTab() {
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           onClick={handleClick}
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: 'none', imageRendering: 'pixelated' }}
         />
         {hoveredPoint && (
           <div

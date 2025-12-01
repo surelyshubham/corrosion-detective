@@ -12,6 +12,21 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Camera, Expand, Minimize, Pin, Redo, RefreshCw } from 'lucide-react'
 
+// Red        = 0–20%
+// Orange     = 21–40%
+// Yellow     = 41–60%
+// LightGreen = 61–80%
+// DarkGreen  = 81–100%
+const getColor = (percentage: number | null) => {
+    if (percentage === null) return new THREE.Color(0x888888) // Grey for ND
+    if (percentage <= 20) return new THREE.Color(0xff0000) // Red
+    if (percentage <= 40) return new THREE.Color(0xffa500) // Orange
+    if (percentage <= 60) return new THREE.Color(0xffff00) // Yellow
+    if (percentage <= 80) return new THREE.Color(0x90ee90) // LightGreen
+    return new THREE.Color(0x006400) // DarkGreen
+};
+
+
 export function ThreeDeeViewTab() {
   const { inspectionResult, selectedPoint } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
@@ -67,37 +82,50 @@ export function ThreeDeeViewTab() {
     const dataMap = new Map(processedData.map(p => [`${p.x},${p.y}`, p]))
     
     const positions = geometry.attributes.position;
+    const colors: number[] = [];
+
     for (let i = 0; i < positions.count; i++) {
+        const x = Math.round(positions.getX(i) + gridSize.width / 2)
+        const z_plane = Math.round(positions.getZ(i) + gridSize.height / 2)
+        const point = dataMap.get(`${x},${z_plane}`)
+        
+        let color: THREE.Color;
+
         // We only want to modify the top surface of the box
         if (positions.getY(i) > 0) {
-            const x = Math.round(positions.getX(i) + gridSize.width / 2)
-            const z_plane = Math.round(positions.getZ(i) + gridSize.height / 2)
-            const point = dataMap.get(`${x},${z_plane}`)
             const thickness = point?.thickness ?? nominalThickness
-            
+            const percentage = point?.percentage ?? 100
+
             // The "top" of our box is at y = boxDepth / 2.
             // We adjust this based on deviation from nominal.
+            // Wall loss (thickness < nominal) should go down.
             const y_pos = (boxDepth / 2) + ((thickness - nominalThickness) * zScale);
             positions.setY(i, y_pos);
+            color = getColor(percentage);
+        } else {
+            // Color for sides and bottom
+            color = getColor(100); // Assume healthy for other faces
         }
+        colors.push(color.r, color.g, color.b);
     }
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ color: 0x60a5fa, side: THREE.DoubleSide, flatShading: false })
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: false })
     const mesh = new THREE.Mesh(geometry, material)
     mesh.position.set(gridSize.width / 2, 0, gridSize.height / 2)
     scene.add(mesh)
     
     // Wireframe for the mesh
     const wireframeGeom = new THREE.WireframeGeometry(geometry);
-    const wireframeMat = new THREE.LineBasicMaterial({ color: 0x1e3a8a, linewidth: 1, transparent: true, opacity: 0.3 });
+    const wireframeMat = new THREE.LineBasicMaterial({ color: 0x333333, linewidth: 1, transparent: true, opacity: 0.2 });
     const wireframe = new THREE.LineSegments(wireframeGeom, wireframeMat);
     wireframe.position.set(gridSize.width / 2, 0, gridSize.height / 2);
     scene.add(wireframe);
 
-    // Reference Plane
-    const refPlaneGeom = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
-    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
+    // Reference Plane (at nominal thickness level)
+    const refPlaneGeom = new THREE.PlaneGeometry(gridSize.width * 1.1, gridSize.height * 1.1);
+    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
     const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
     refPlane.rotation.x = -Math.PI / 2;
     refPlane.position.set(gridSize.width / 2, boxDepth/2, gridSize.height / 2); // Position at nominal height
@@ -136,7 +164,7 @@ export function ThreeDeeViewTab() {
     scene.add(minMaxGroup);
     
     // Selected Point Marker
-    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/80, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.9 }));
+    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/80, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
     selectedMarker.visible = false;
     scene.add(selectedMarker);
 
