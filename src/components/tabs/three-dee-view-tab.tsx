@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useRef, useEffect, useState } from 'react'
@@ -41,7 +42,7 @@ export function ThreeDeeViewTab() {
 
     // Camera
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000)
-    camera.position.set(gridSize.width / 2, gridSize.height, gridSize.width / 2)
+    camera.position.set(gridSize.width / 2, gridSize.height, gridSize.width * 1.2)
     cameraRef.current = camera
 
     // Controls
@@ -51,19 +52,20 @@ export function ThreeDeeViewTab() {
     controlsRef.current = controls
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8)
     scene.add(ambientLight)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-    directionalLight.position.set(50, 50, 50)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1)
+    directionalLight.position.set(100, 100, 100)
     scene.add(directionalLight)
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5)
+    directionalLight2.position.set(-100, 100, -100)
+    scene.add(directionalLight2)
     
     // Main Asset Geometry
     const geometry = new THREE.PlaneGeometry(gridSize.width, gridSize.height, gridSize.width - 1, gridSize.height - 1)
     const dataMap = new Map(processedData.map(p => [`${p.x},${p.y}`, p]))
     
     const positions = geometry.attributes.position;
-    const colors = [];
-
     for (let i = 0; i < positions.count; i++) {
         const x = Math.round(positions.getX(i) + gridSize.width / 2)
         const y = Math.round(positions.getY(i) + gridSize.height / 2)
@@ -71,51 +73,63 @@ export function ThreeDeeViewTab() {
         const thickness = point?.thickness ?? nominalThickness
         const z = (thickness - nominalThickness) * zScale;
         positions.setZ(i, z);
-
-        const color = new THREE.Color();
-        const percentage = point?.percentage ?? 100;
-        if(percentage > 70) color.set('#3b82f6');
-        else if(percentage > 60) color.set('#14b8a6');
-        else if(percentage > 50) color.set('#22c55e');
-        else if(percentage > 40) color.set('#eab308');
-        else color.set('#ef4444');
-        colors.push(color.r, color.g, color.b);
     }
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: false })
+    const material = new THREE.MeshStandardMaterial({ color: 0x60a5fa, side: THREE.DoubleSide, flatShading: false })
     const mesh = new THREE.Mesh(geometry, material)
     mesh.rotation.x = -Math.PI / 2
+    mesh.position.set(gridSize.width / 2, 0, gridSize.height / 2)
     scene.add(mesh)
     
+    // Wireframe for the mesh
+    const wireframeGeom = new THREE.WireframeGeometry(geometry);
+    const wireframeMat = new THREE.LineBasicMaterial({ color: 0x1e3a8a, linewidth: 1, transparent: true, opacity: 0.3 });
+    const wireframe = new THREE.LineSegments(wireframeGeom, wireframeMat);
+    wireframe.rotation.x = -Math.PI / 2;
+    wireframe.position.set(gridSize.width / 2, 0, gridSize.height / 2);
+    scene.add(wireframe);
+
     // Reference Plane
     const refPlaneGeom = new THREE.PlaneGeometry(gridSize.width, gridSize.height);
-    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
     const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
     refPlane.rotation.x = -Math.PI / 2;
+    refPlane.position.set(gridSize.width / 2, 0, gridSize.height / 2);
     refPlane.visible = showReference;
     scene.add(refPlane);
+
+    // Grid Helper
+    const gridHelper = new THREE.GridHelper(Math.max(gridSize.width, gridSize.height), 10);
+    gridHelper.position.set(gridSize.width / 2, 0, gridSize.height / 2)
+    scene.add(gridHelper);
+
+    // Axes Helper
+    const axesHelper = new THREE.AxesHelper(Math.max(gridSize.width, gridSize.height) * 0.2);
+    axesHelper.position.set(0, 0.1, 0); // Slightly above the grid
+    scene.add(axesHelper);
+
 
     // Min/Max Markers
     const minMaxGroup = new THREE.Group();
     const minPoint = processedData.find(p => p.thickness === minThickness)
     if(minPoint){
-        const minMarker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        const minMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
         minMarker.position.set(minPoint.x, (minPoint.thickness - nominalThickness) * zScale, minPoint.y);
         minMaxGroup.add(minMarker);
     }
     const maxPoint = processedData.find(p => p.thickness === maxThickness)
     if(maxPoint){
-        const maxMarker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
+        const maxMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
         maxMarker.position.set(maxPoint.x, (maxPoint.thickness - nominalThickness) * zScale, maxPoint.y);
         minMaxGroup.add(maxMarker);
     }
     minMaxGroup.visible = showMinMax;
+    minMaxGroup.position.set(0, 0, 0);
     scene.add(minMaxGroup);
     
     // Selected Point Marker
-    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.8 }));
+    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/80, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.9 }));
     selectedMarker.visible = false;
     scene.add(selectedMarker);
 
@@ -160,7 +174,7 @@ export function ThreeDeeViewTab() {
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
         const { gridSize } = inspectionResult.stats;
-        cameraRef.current.position.set(gridSize.width / 2, gridSize.height, gridSize.width / 2);
+        cameraRef.current.position.set(gridSize.width / 2, gridSize.height, gridSize.width * 1.2);
         controlsRef.current.target.set(gridSize.width / 2, 0, gridSize.height / 2);
         controlsRef.current.update();
     }
@@ -186,7 +200,7 @@ export function ThreeDeeViewTab() {
           <CardContent className="space-y-6">
             <div className="space-y-3">
               <Label>Z-Axis Scale: {zScale.toFixed(1)}x</Label>
-              <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={0.1} max={5} step={0.1} />
+              <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={0.1} max={15} step={0.1} />
             </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="ref-plane-switch" className="flex items-center gap-2"><Expand className="h-4 w-4" />Show Reference Plane</Label>
@@ -212,3 +226,5 @@ export function ThreeDeeViewTab() {
     </div>
   )
 }
+
+    
