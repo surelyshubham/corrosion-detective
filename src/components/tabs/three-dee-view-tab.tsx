@@ -209,13 +209,15 @@ export function ThreeDeeViewTab() {
     // Min/Max Markers
     const minMaxGroup = new THREE.Group();
     const minPoint = processedData.find(p => p.thickness === minThickness)
+    let minMarker: THREE.Mesh | null = null;
     if(minPoint){
-        const minMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        minMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
         minMaxGroup.add(minMarker);
     }
     const maxPoint = processedData.find(p => p.thickness === maxThickness)
+    let maxMarker: THREE.Mesh | null = null;
     if(maxPoint){
-        const maxMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
+        maxMarker = new THREE.Mesh(new THREE.SphereGeometry(gridSize.width/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
         minMaxGroup.add(maxMarker);
     }
     minMaxGroup.visible = showMinMax;
@@ -264,7 +266,6 @@ export function ThreeDeeViewTab() {
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    let minMarker: any, maxMarker: any; // define these to satisfy the compiler
 
     const onMouseMove = (event: MouseEvent) => {
         if (!mountRef.current) return;
