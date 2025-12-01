@@ -6,12 +6,6 @@ import { useInspectionStore } from '@/store/use-inspection-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useResizeDetector } from 'react-resize-detector'
 
-// Based on thickness percentage:
-// Red        = 0–20%
-// Orange     = 21–40%
-// Yellow     = 41–60%
-// LightGreen = 61–80%
-// DarkGreen  = 81–100%
 const getColor = (percentage: number | null) => {
     if (percentage === null) return 'rgba(128,128,128,0.5)'; // Grey for ND
     if (percentage <= 20) return '#ff0000'; // Red
@@ -23,7 +17,18 @@ const getColor = (percentage: number | null) => {
 
 const AXIS_COLOR = '#888';
 const FONT = '10px sans-serif';
-const MARGIN = { top: 20, right: 20, bottom: 40, left: 40 };
+const MARGIN = { top: 20, right: 20, bottom: 40, left: 50 };
+
+// Function to calculate "nice" tick intervals
+const getNiceTickInterval = (maxVal: number, maxTicks = 10) => {
+    const roughStep = maxVal / maxTicks;
+    const goodNormalizedSteps = [1, 2, 5, 10];
+    const stepPower = Math.pow(10, -Math.floor(Math.log10(roughStep)));
+    const normalizedStep = roughStep * stepPower;
+    const goodNormalizedStep = goodNormalizedSteps.find(step => step >= normalizedStep) || 10;
+    return goodNormalizedStep / stepPower;
+};
+
 
 export function TwoDeeHeatmapTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint } = useInspectionStore()
@@ -47,18 +52,15 @@ export function TwoDeeHeatmapTab() {
 
     ctx.clearRect(0, 0, width, height);
     
-    // Move origin to top-left of the plotting area
     ctx.save();
     ctx.translate(MARGIN.left, MARGIN.top);
 
-    // Create a map for quick lookup
     const dataMap = new Map<string, any>();
     processedData.forEach(p => dataMap.set(`${p.x},${p.y}`, p));
 
     const pixelSizeX = plotWidth / gridSize.width;
     const pixelSizeY = plotHeight / gridSize.height;
 
-    // Draw Heatmap
     for (let i = 0; i < gridSize.width; i++) {
         for (let j = 0; j < gridSize.height; j++) {
             const point = dataMap.get(`${i},${j}`);
@@ -66,16 +68,15 @@ export function TwoDeeHeatmapTab() {
             ctx.fillRect(i * pixelSizeX, j * pixelSizeY, pixelSizeX, pixelSizeY);
 
             if(selectedPoint && selectedPoint.x === i && selectedPoint.y === j) {
-                ctx.strokeStyle = '#00ffff'; // Cyan highlight
+                ctx.strokeStyle = '#00ffff';
                 ctx.lineWidth = Math.max(2, pixelSizeX / 4);
                 ctx.strokeRect(i * pixelSizeX, j * pixelSizeY, pixelSizeX, pixelSizeY);
             }
         }
     }
     
-    ctx.restore(); // Restore context to draw axes
+    ctx.restore();
     
-    // Draw Axes
     ctx.fillStyle = AXIS_COLOR;
     ctx.strokeStyle = AXIS_COLOR;
     ctx.font = FONT;
@@ -86,21 +87,21 @@ export function TwoDeeHeatmapTab() {
     ctx.moveTo(MARGIN.left, MARGIN.top);
     ctx.lineTo(MARGIN.left, height - MARGIN.bottom);
     ctx.stroke();
-    for (let i = 0; i <= 10; i++) {
-        const y = MARGIN.top + (i / 10) * plotHeight;
-        const yValue = Math.round((i / 10) * gridSize.height);
+    const yTickInterval = getNiceTickInterval(gridSize.height);
+    for (let i = 0; i <= gridSize.height; i += yTickInterval) {
+        const y = MARGIN.top + (i / gridSize.height) * plotHeight;
         ctx.moveTo(MARGIN.left - 5, y);
         ctx.lineTo(MARGIN.left, y);
         ctx.stroke();
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
-        ctx.fillText(yValue.toString(), MARGIN.left - 8, y);
+        ctx.fillText(i.toString(), MARGIN.left - 8, y);
     }
     ctx.save();
     ctx.translate(15, height/2);
     ctx.rotate(-Math.PI/2);
     ctx.textAlign = "center";
-    ctx.fillText("Y-axis", 0, 0);
+    ctx.fillText("Y-axis (mm)", 0, 0);
     ctx.restore();
 
     // X-Axis
@@ -108,19 +109,18 @@ export function TwoDeeHeatmapTab() {
     ctx.moveTo(MARGIN.left, height - MARGIN.bottom);
     ctx.lineTo(width - MARGIN.right, height - MARGIN.bottom);
     ctx.stroke();
-    for (let i = 0; i <= 10; i++) {
-        const x = MARGIN.left + (i / 10) * plotWidth;
-        const xValue = Math.round((i / 10) * gridSize.width);
+    const xTickInterval = getNiceTickInterval(gridSize.width);
+    for (let i = 0; i <= gridSize.width; i += xTickInterval) {
+        const x = MARGIN.left + (i / gridSize.width) * plotWidth;
         ctx.moveTo(x, height - MARGIN.bottom);
         ctx.lineTo(x, height - MARGIN.bottom + 5);
         ctx.stroke();
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(xValue.toString(), x, height - MARGIN.bottom + 8);
+        ctx.fillText(i.toString(), x, height - MARGIN.bottom + 8);
     }
     ctx.textAlign = "center";
-    ctx.fillText("X-axis", width/2, height - 15);
-
+    ctx.fillText("X-axis (mm)", width/2, height - 15);
 
   }, [inspectionResult, width, height, selectedPoint]);
 
