@@ -89,6 +89,26 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     )
 }
 
+function createTextSprite(message: string, opts: { fontsize?: number, fontface?: string, textColor?: { r: number, g: number, b: number, a: number } }) {
+    const { fontsize = 24, fontface = 'Arial', textColor = { r: 255, g: 255, b: 255, a: 1.0 } } = opts;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+    context.font = `Bold ${fontsize}px ${fontface}`;
+    const metrics = context.measureText(message);
+    canvas.width = metrics.width;
+    canvas.height = fontsize;
+    context.font = `Bold ${fontsize}px ${fontface}`;
+    context.fillStyle = `rgba(${textColor.r}, ${textColor.g}, ${textColor.b}, ${textColor.a})`;
+    context.fillText(message, 0, fontsize);
+    const texture = new THREE.Texture(canvas);
+    texture.needsUpdate = true;
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(canvas.width / 4, canvas.height / 4, 1.0);
+    return sprite;
+}
+
+
 export function ThreeDeeViewTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
@@ -216,8 +236,43 @@ export function ThreeDeeViewTab() {
     const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
     axesHelper.position.set(-VISUAL_WIDTH/2, -visualHeight/2, 0);
     gridContainer.add(axesHelper);
+    
+    // Add axis labels
+    const axisLabels = new THREE.Group();
+    const xLabel = createTextSprite("X", {});
+    xLabel.position.set(VISUAL_WIDTH / 2 + 10, -visualHeight / 2, 0);
+    axisLabels.add(xLabel);
+
+    const yLabel = createTextSprite("Y", {});
+    yLabel.position.set(-VISUAL_WIDTH / 2, visualHeight / 2 + 10, 0);
+    axisLabels.add(yLabel);
+
+    const zLabel = createTextSprite("Z (Thickness)", {});
+    zLabel.position.set(-VISUAL_WIDTH / 2, -visualHeight / 2, zScale > 0 ? zScale + 10 : 10);
+    axisLabels.add(zLabel);
+    
+    const tickLength = 2;
+    const numTicks = 5;
+
+    for (let i = 0; i <= numTicks; i++) {
+        const frac = i / numTicks;
+        // X-axis ticks
+        const xPos = (frac - 0.5) * VISUAL_WIDTH;
+        const xTickLabel = createTextSprite(`${Math.round(frac * gridSize.width)}`, { fontsize: 18 });
+        xTickLabel.position.set(xPos, -visualHeight / 2 - tickLength - 5, 0);
+        axisLabels.add(xTickLabel);
+
+        // Y-axis ticks
+        const yPos = (frac - 0.5) * visualHeight;
+        const yTickLabel = createTextSprite(`${Math.round(frac * gridSize.height)}`, { fontsize: 18 });
+        yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, yPos, 0);
+        axisLabels.add(yTickLabel);
+    }
+    
+    gridContainer.add(axisLabels);
     scene.add(gridContainer);
     gridContainer.rotation.x = -Math.PI / 2;
+
 
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geometry, material);
