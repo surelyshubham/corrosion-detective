@@ -22,10 +22,10 @@ export const getConditionClass = (condition: Condition) => {
       return 'text-green-500';
     case 'Moderate':
       return 'text-yellow-500';
-    case 'Localized':
-      return 'text-orange-500';
     case 'Severe':
-      return 'text-red-500';
+      return 'text-orange-500';
+    case 'Critical':
+      return 'text-red-500 font-bold';
     default:
       return 'text-muted-foreground';
   }

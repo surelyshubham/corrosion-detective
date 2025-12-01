@@ -27,12 +27,12 @@ export function InfoTab() {
   
   const statsData = [
     { label: 'Min Thickness', value: `${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)` },
-    { label: 'Max Thickness', value: `${stats.maxThickness.toFixed(2)} mm` },
-    { label: 'Average Thickness', value: `${stats.avgThickness.toFixed(2)} mm` },
+    { label: 'Max Eff. Thickness', value: `${stats.maxThickness.toFixed(2)} mm` },
+    { label: 'Average Eff. Thickness', value: `${stats.avgThickness.toFixed(2)} mm` },
     { label: 'Worst Location', value: `X: ${stats.worstLocation.x}, Y: ${stats.worstLocation.y}` },
-    { label: 'Corroded Area (<80%)', value: `${stats.areaBelow80.toFixed(2)}%`, className: stats.areaBelow80 > 5 ? 'text-orange-500' : ''},
+    { label: 'Corroded Area (<80%)', value: `${stats.areaBelow80.toFixed(2)}%`, className: stats.areaBelow80 > 0 ? 'text-orange-500' : ''},
     { label: 'Corroded Area (<70%)', value: `${stats.areaBelow70.toFixed(2)}%`, className: stats.areaBelow70 > 0 ? 'text-red-500' : ''},
-    { label: 'Corroded Area (<60%)', value: `${stats.areaBelow60.toFixed(2)}%`, className: stats.areaBelow60 > 0 ? 'text-red-700' : ''},
+    { label: 'Corroded Area (<60%)', value: `${stats.areaBelow60.toFixed(2)}%`, className: stats.areaBelow60 > 0 ? 'text-red-700 font-bold' : ''},
   ]
 
   return (
@@ -56,7 +56,7 @@ export function InfoTab() {
         
         <Card>
           <CardHeader>
-            <CardTitle className="font-headline">Corrosion Statistics</CardTitle>
+            <CardTitle className="font-headline">Corrosion Statistics (based on Effective Thickness)</CardTitle>
           </CardHeader>
           <CardContent>
              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">

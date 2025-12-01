@@ -11,16 +11,14 @@ import { Percent, Ruler } from 'lucide-react'
 
 const getAbsColor = (percentage: number | null): string => {
     if (percentage === null) return 'rgba(128,128,128,0.5)'; // Grey for ND
-    if (percentage <= 20) return '#ff0000'; // Red
-    if (percentage <= 40) return '#ffa500'; // Orange
-    if (percentage <= 60) return '#ffff00'; // Yellow
-    if (percentage <= 80) return '#90ee90'; // LightGreen
-    return '#006400'; // DarkGreen
+    if (percentage <= 60) return '#ff0000'; // Red
+    if (percentage <= 80) return '#ffa500'; // Orange
+    if (percentage <= 95) return '#ffff00'; // Yellow
+    return '#00ff00'; // Green
 };
 
 const getNormalizedColor = (normalizedPercent: number | null): string => {
     if (normalizedPercent === null) return 'rgba(128,128,128,0.5)';
-    // HSL: hue from 0 (red) to 240 (blue). We'll map 0-1 to 240-0.
     const hue = 240 * (1 - normalizedPercent);
     return `hsl(${hue}, 100%, 50%)`;
 };
@@ -30,29 +28,27 @@ const AXIS_COLOR = '#888';
 const FONT = '10px sans-serif';
 const MARGIN = { top: 20, right: 20, bottom: 40, left: 50 };
 
-// Function to calculate "nice" tick intervals
 const getNiceTickInterval = (maxVal: number, maxTicks = 10) => {
     if (maxVal === 0) return 1;
     const roughStep = maxVal / maxTicks;
     const stepPower = Math.pow(10, -Math.floor(Math.log10(roughStep)));
     const normalizedStep = roughStep * stepPower;
-    const goodNormalizedSteps = [1, 2, 5, 10];
-    const goodNormalizedStep = goodNormalizedSteps.find(step => step >= normalizedStep) || 10;
+    const goodNormalizedSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000];
+    const goodNormalizedStep = goodNormalizedSteps.find(step => step >= normalizedStep) || 1000;
     return goodNormalizedStep / stepPower;
 };
 
 const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
     const renderMmLegend = () => {
         const levels = [
-            { pct: 100, label: `> 80%`, color: getAbsColor(100) },
-            { pct: 80, label: `61-80%`, color: getAbsColor(80) },
-            { pct: 60, label: `41-60%`, color: getAbsColor(60) },
-            { pct: 40, label: `21-40%`, color: getAbsColor(40) },
-            { pct: 20, label: `< 20%`, color: getAbsColor(20) },
+            { pct: 100, label: `> 95%`, color: getAbsColor(100) },
+            { pct: 95, label: `80-95%`, color: getAbsColor(95) },
+            { pct: 80, label: `60-80%`, color: getAbsColor(80) },
+            { pct: 60, label: `< 60%`, color: getAbsColor(60) },
         ];
         return (
              <div className='flex flex-col gap-1'>
-                <div className="font-medium text-xs">Thickness (% of {nominalThickness}mm)</div>
+                <div className="font-medium text-xs">Eff. Thickness (% of {nominalThickness}mm)</div>
                  {levels.map(l => (
                     <div key={l.pct} className="flex items-center gap-2 text-xs">
                         <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: l.color }} />
@@ -74,7 +70,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
         
         return (
              <div className='flex flex-col gap-1'>
-                <div className="font-medium text-xs">Thickness (Normalized)</div>
+                <div className="font-medium text-xs">Eff. Thickness (Normalized)</div>
                 <div className="flex items-center gap-2">
                     <div className='h-20 w-4 border' style={{ background: `linear-gradient(to top, ${gradient})`}} />
                     <div className='flex flex-col justify-between h-20 text-xs'>
@@ -89,6 +85,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     return (
         <div className="bg-card/90 p-2 rounded-md border text-xs">
             {mode === 'mm' ? renderMmLegend() : renderPercentLegend()}
+             <div className="text-xs text-muted-foreground mt-1">ND: Gray</div>
         </div>
     )
 }
@@ -107,7 +104,11 @@ export function TwoDeeHeatmapTab() {
 
     const { processedData, stats } = inspectionResult
     const { gridSize, minThickness, maxThickness } = stats;
-    const thicknessRange = maxThickness - minThickness;
+
+    const effectiveThicknesses = processedData.map(p => p.effectiveThickness).filter(t => t !== null) as number[];
+    const minEffT = Math.min(...effectiveThicknesses);
+    const maxEffT = Math.max(...effectiveThicknesses);
+    const effTRange = maxEffT - minEffT;
 
     canvas.width = width;
     canvas.height = height;
@@ -132,8 +133,8 @@ export function TwoDeeHeatmapTab() {
             
             let color: string;
             if (colorMode === '%') {
-                const normalized = point?.thickness !== null && thicknessRange > 0
-                    ? (point.thickness - minThickness) / thicknessRange
+                const normalized = point?.effectiveThickness !== null && effTRange > 0
+                    ? (point.effectiveThickness - minEffT) / effTRange
                     : null;
                 color = getNormalizedColor(normalized);
             } else {
@@ -264,7 +265,8 @@ export function TwoDeeHeatmapTab() {
               }}
             >
               <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
-              <div>Thickness: {hoveredPoint.thickness?.toFixed(2) ?? 'ND'} mm</div>
+              <div>Raw Thick: {hoveredPoint.rawThickness?.toFixed(2) ?? 'ND'} mm</div>
+              <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
               <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
             </div>
           )}

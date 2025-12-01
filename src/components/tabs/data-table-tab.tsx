@@ -59,7 +59,8 @@ export function DataTableTab() {
     const sheet = XLSX.utils.json_to_sheet(sortedAndFilteredData.map(d => ({
         x: d.x,
         y: d.y,
-        thickness: d.thickness?.toFixed(3) ?? 'ND',
+        rawThickness: d.rawThickness?.toFixed(3) ?? 'ND',
+        effectiveThickness: d.effectiveThickness?.toFixed(3) ?? 'ND',
         deviation: d.deviation?.toFixed(3) ?? 'N/A',
         percentage: d.percentage?.toFixed(1) ?? 'N/A',
         wallLoss: d.wallLoss?.toFixed(3) ?? 'N/A',
@@ -74,7 +75,8 @@ export function DataTableTab() {
   const columns: { key: SortKey; label: string }[] = [
     { key: 'x', label: 'X' },
     { key: 'y', label: 'Y' },
-    { key: 'thickness', label: 'Thickness (mm)' },
+    { key: 'rawThickness', label: 'Raw Thickness (mm)' },
+    { key: 'effectiveThickness', label: 'Effective Thickness (mm)' },
     { key: 'deviation', label: 'Deviation (mm)' },
     { key: 'percentage', label: 'Percentage (%)' },
     { key: 'wallLoss', label: 'Wall Loss (mm)' },
@@ -120,7 +122,8 @@ export function DataTableTab() {
               >
                 <TableCell>{item.x}</TableCell>
                 <TableCell>{item.y}</TableCell>
-                <TableCell>{item.thickness !== null ? item.thickness.toFixed(3) : 'ND'}</TableCell>
+                <TableCell>{item.rawThickness !== null ? item.rawThickness.toFixed(3) : 'ND'}</TableCell>
+                <TableCell>{item.effectiveThickness !== null ? item.effectiveThickness.toFixed(3) : 'ND'}</TableCell>
                 <TableCell>{item.deviation !== null ? item.deviation.toFixed(3) : 'N/A'}</TableCell>
                 <TableCell>{item.percentage !== null ? item.percentage.toFixed(1) : 'N/A'}</TableCell>
                 <TableCell>{item.wallLoss !== null ? item.wallLoss.toFixed(3) : 'N/A'}</TableCell>

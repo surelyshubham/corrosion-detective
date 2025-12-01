@@ -20,7 +20,8 @@ export const assetTypes: AssetType[] = [
 export interface InspectionDataPoint {
   x: number;
   y: number;
-  thickness: number | null;
+  rawThickness: number | null;
+  effectiveThickness: number | null;
   deviation: number | null;
   percentage: number | null;
   wallLoss: number | null;
@@ -41,7 +42,7 @@ export interface InspectionStats {
   scannedArea: number;
 }
 
-export type Condition = 'Healthy' | 'Moderate' | 'Localized' | 'Severe' | 'N/A';
+export type Condition = 'Healthy' | 'Moderate' | 'Severe' | 'Critical' | 'N/A';
 
 export interface AIInsight {
   condition: string;

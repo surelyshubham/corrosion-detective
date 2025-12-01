@@ -1,4 +1,4 @@
-import type { InspectionDataPoint, InspectionStats, Condition, AssetType } from './types';
+import type { InspectionDataPoint, InspectionStats, Condition } from './types';
 
 interface ProcessDataResult {
   processedData: InspectionDataPoint[];
@@ -7,7 +7,7 @@ interface ProcessDataResult {
 }
 
 export const processData = (
-  data: InspectionDataPoint[],
+  data: Omit<InspectionDataPoint, 'effectiveThickness' | 'deviation' | 'percentage' | 'wallLoss'>[],
   nominalThickness: number
 ): ProcessDataResult => {
   if (data.length === 0) {
@@ -40,28 +40,36 @@ export const processData = (
   let maxX = 0;
   let maxY = 0;
 
-  const processedData = data.map(point => {
+  const processedData: InspectionDataPoint[] = data.map(point => {
     maxX = Math.max(maxX, point.x);
     maxY = Math.max(maxY, point.y);
 
-    if (point.thickness === null) {
+    if (point.rawThickness === null) {
       countND++;
-      return { ...point };
+      return { 
+        ...point,
+        effectiveThickness: null,
+        deviation: null,
+        percentage: null,
+        wallLoss: null,
+       };
     }
 
-    const thickness = point.thickness;
+    const raw = point.rawThickness;
+    const effectiveThickness = Math.min(raw, nominalThickness);
+    
     validPointsCount++;
-    sumThickness += thickness;
+    sumThickness += effectiveThickness;
 
-    if (thickness < minThickness) {
-      minThickness = thickness;
+    if (effectiveThickness < minThickness) {
+      minThickness = effectiveThickness;
       worstLocation = { x: point.x, y: point.y };
     }
-    if (thickness > maxThickness) {
-      maxThickness = thickness;
+    if (effectiveThickness > maxThickness) {
+      maxThickness = effectiveThickness;
     }
 
-    const percentage = (thickness / nominalThickness) * 100;
+    const percentage = (effectiveThickness / nominalThickness) * 100;
 
     if (percentage < 80) areaBelow80++;
     if (percentage < 70) areaBelow70++;
@@ -69,9 +77,10 @@ export const processData = (
 
     return {
       ...point,
-      deviation: thickness - nominalThickness,
+      effectiveThickness,
+      deviation: effectiveThickness - nominalThickness,
       percentage: percentage,
-      wallLoss: nominalThickness - thickness,
+      wallLoss: nominalThickness - effectiveThickness,
     };
   });
   
@@ -103,14 +112,15 @@ export const processData = (
 
   // Condition evaluation
   let condition: Condition;
-  if (stats.minPercentage >= 80 && stats.areaBelow80 < 5) {
+  const finalPercentage = stats.minPercentage;
+  if (finalPercentage >= 95) {
     condition = 'Healthy';
-  } else if (stats.minPercentage >= 70 && stats.areaBelow70 < 10) {
+  } else if (finalPercentage >= 80) {
     condition = 'Moderate';
-  } else if (stats.minPercentage >= 60) {
-    condition = 'Localized';
-  } else {
+  } else if (finalPercentage >= 60) {
     condition = 'Severe';
+  } else {
+    condition = 'Critical';
   }
   
   if (validPointsCount === 0) {
