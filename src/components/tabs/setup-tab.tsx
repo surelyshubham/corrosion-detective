@@ -247,8 +247,8 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       <DummyDataGenerator isLoading={isLoading} />
       
       <AlertDialog open={isMergeAlertOpen} onOpenChange={setIsMergeAlertOpen}>
-        <form onSubmit={mergeForm.handleSubmit(handleMergeSubmit)}>
-          <AlertDialogContent>
+        <AlertDialogContent>
+          <form onSubmit={mergeForm.handleSubmit(handleMergeSubmit)}>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2"><Merge /> Merge Plate</AlertDialogTitle>
               <AlertDialogDescription>
@@ -303,11 +303,11 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
               <Button type="submit">Validate & Merge</Button>
             </AlertDialogFooter>
-          </AlertDialogContent>
-        </form>
+          </form>
+        </AlertDialogContent>
       </AlertDialog>
     </div>
   )
