@@ -8,6 +8,56 @@ import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
 import { BrainCircuit, Loader2, Layers } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
+import type { Plate } from '@/lib/types'
+
+const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
+  const stats = plate.stats
+  
+  const statsData = [
+    { label: 'Min Eff. Thickness', value: `${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)` },
+    { label: 'Max Eff. Thickness', value: `${stats.maxThickness.toFixed(2)} mm` },
+    { label: 'Average Eff. Thickness', value: `${stats.avgThickness.toFixed(2)} mm` },
+    { label: 'Worst Location', value: `X: ${stats.worstLocation.x}, Y: ${stats.worstLocation.y}` },
+    { label: 'Corroded Area (<80%)', value: `${stats.areaBelow80.toFixed(2)}%`, className: stats.areaBelow80 > 0 ? 'text-orange-500' : ''},
+    { label: 'Corroded Area (<70%)', value: `${stats.areaBelow70.toFixed(2)}%`, className: stats.areaBelow70 > 0 ? 'text-red-500' : ''},
+    { label: 'Corroded Area (<60%)', value: `${stats.areaBelow60.toFixed(2)}%`, className: stats.areaBelow60 > 0 ? 'text-red-700 font-bold' : ''},
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-headline text-lg">Plate {index + 1}: {plate.fileName}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Statistics</h4>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+            {statsData.map(item => (
+              <div key={item.label} className="flex justify-between border-b pb-1">
+                <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Metadata</h4>
+          <Table>
+            <TableBody>
+            {plate.metadata.map((row, idx) => (
+                <TableRow key={idx}>
+                <TableCell className="font-medium w-1/3 py-1">{row[0]}</TableCell>
+                <TableCell className="py-1">{row[1]}</TableCell>
+                </TableRow>
+            ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 
 export function InfoTab() {
   const { inspectionResult } = useInspectionStore()
@@ -25,7 +75,7 @@ export function InfoTab() {
     { label: 'Not Scanned (ND) Points', value: stats.countND.toLocaleString() },
   ]
   
-  const statsData = [
+  const overallStatsData = [
     { label: 'Min Eff. Thickness', value: `${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)` },
     { label: 'Max Eff. Thickness', value: `${stats.maxThickness.toFixed(2)} mm` },
     { label: 'Average Eff. Thickness', value: `${stats.avgThickness.toFixed(2)} mm` },
@@ -39,57 +89,47 @@ export function InfoTab() {
     <ScrollArea className="h-full pr-4">
       <div className="grid md:grid-cols-3 gap-6 animate-fade-in">
         <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-headline">Overall Inspection Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
-                {summaryData.map(item => (
-                  <div key={item.label} className="flex justify-between border-b pb-1">
-                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
-                    <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-headline">Overall Corrosion Statistics</CardTitle>
-            </CardHeader>
-            <CardContent>
-               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
-                {statsData.map(item => (
-                  <div key={item.label} className="flex justify-between border-b pb-1">
-                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
-                    <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
 
           {plates.map((plate, index) => (
-            <Card key={plate.id}>
-              <CardHeader>
-                <CardTitle className="font-headline text-lg">Plate {index + 1}: {plate.fileName}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                 <Table>
-                    <TableBody>
-                    {plate.metadata.map((row, idx) => (
-                        <TableRow key={idx}>
-                        <TableCell className="font-medium w-1/3">{row[0]}</TableCell>
-                        <TableCell>{row[1]}</TableCell>
-                        </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            <PlateStatsCard key={plate.id} plate={plate} index={index} />
           ))}
+
+          {plates.length > 1 && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-headline">Overall Inspection Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                    {summaryData.map(item => (
+                      <div key={item.label} className="flex justify-between border-b pb-1">
+                        <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                        <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle className="font-headline">Overall Corrosion Statistics</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                    {overallStatsData.map(item => (
+                      <div key={item.label} className="flex justify-between border-b pb-1">
+                        <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                        <dd className={`text-sm font-semibold ${item.className || ''}`}>{item.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
         </div>
 
         <div className="md:col-span-1">
@@ -136,7 +176,7 @@ export function InfoTab() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">Layout summary will be implemented here.</p>
+                  <p className="text-sm text-muted-foreground">The 2D Heatmap and 3D View tabs show the visual layout of the merged plates.</p>
                 </CardContent>
               </Card>
             )}
