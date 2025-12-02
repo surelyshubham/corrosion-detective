@@ -6,9 +6,9 @@ import { useInspectionStore, type ColorMode } from '@/store/use-inspection-store
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '../ui/label'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
-import { Percent, Ruler, ZoomIn, Search, MousePointer, ZoomOut, RefreshCw } from 'lucide-react'
+import { Percent, Ruler, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
-import { ScrollArea, ScrollBar } from '../ui/scroll-area'
+import { cn } from '@/lib/utils'
 
 // --- Color Helper Functions ---
 const getAbsColor = (percentage: number | null): string => {
@@ -100,6 +100,9 @@ const getNiceInterval = (range: number, maxTicks: number): number => {
 export function TwoDeeHeatmapTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const xAxisRef = useRef<HTMLDivElement>(null);
+  const yAxisRef = useRef<HTMLDivElement>(null);
   
   const [zoom, setZoom] = useState(1);
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
@@ -109,6 +112,7 @@ export function TwoDeeHeatmapTab() {
   
   const BASE_CELL_SIZE = 6;
   const scaledCellSize = BASE_CELL_SIZE * zoom;
+  const AXIS_SIZE = 35; // Space for axis labels
 
   const plateBoundaries = useMemo(() => {
     if (!mergedGrid || plates.length <= 1) return [];
@@ -166,7 +170,7 @@ export function TwoDeeHeatmapTab() {
 
 
     // Heatmap
-    const allEffThicknesses = mergedGrid.flat().map(c => c.effectiveThickness).filter(t => t !== null) as number[];
+    const allEffThicknesses = mergedGrid.flat().map(c => c?.effectiveThickness).filter(t => t !== null) as number[];
     const minEffT = Math.min(...allEffThicknesses);
     const effTRange = Math.max(...allEffThicknesses) - minEffT;
     
@@ -213,7 +217,7 @@ export function TwoDeeHeatmapTab() {
     
     // Plate Boundaries
     ctx.strokeStyle = '#FFFFFF'; // White boundaries
-    ctx.lineWidth = Math.max(2, 4 * zoom / 10);
+    ctx.lineWidth = Math.max(1, 2 * zoom / 10);
     plateBoundaries.forEach(b => {
         ctx.strokeRect(b.x * scaledCellSize, b.y * scaledCellSize, b.width * scaledCellSize, b.height * scaledCellSize);
     });
@@ -221,7 +225,7 @@ export function TwoDeeHeatmapTab() {
     // Selection outline
     if (selectedPoint) {
         ctx.strokeStyle = '#00ffff'; // Cyan
-        ctx.lineWidth = Math.max(2, 4 * zoom / 10);
+        ctx.lineWidth = Math.max(1, 3 * zoom / 10);
         ctx.strokeRect(selectedPoint.x * scaledCellSize, selectedPoint.y * scaledCellSize, scaledCellSize, scaledCellSize);
     }
     
@@ -231,8 +235,15 @@ export function TwoDeeHeatmapTab() {
     draw();
   }, [draw]);
   
-  // --- Interaction Handlers ---
+  const handleScroll = () => {
+      if (scrollContainerRef.current && xAxisRef.current && yAxisRef.current) {
+          const { scrollLeft, scrollTop } = scrollContainerRef.current;
+          xAxisRef.current.style.transform = `translateX(-${scrollLeft}px)`;
+          yAxisRef.current.style.transform = `translateY(-${scrollTop}px)`;
+      }
+  };
 
+  // --- Interaction Handlers ---
   const adjustZoom = (factor: number) => {
     const newZoom = zoom * factor;
     const clampedZoom = Math.max(0.2, Math.min(newZoom, 50));
@@ -241,6 +252,10 @@ export function TwoDeeHeatmapTab() {
   
   const resetView = () => {
     setZoom(1);
+    if(scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = 0;
+        scrollContainerRef.current.scrollTop = 0;
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -254,8 +269,8 @@ export function TwoDeeHeatmapTab() {
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
         const pointData = mergedGrid[gridY]?.[gridX];
-        if(pointData) {
-            setHoveredPoint({ x: gridX, y: gridY, ...pointData, clientX: e.clientX, clientY: e.clientY });
+        if(pointData && pointData.plateId) {
+             setHoveredPoint({ x: gridX, y: gridY, ...pointData, clientX: e.clientX, clientY: e.clientY });
         } else {
             setHoveredPoint(null);
         }
@@ -278,6 +293,37 @@ export function TwoDeeHeatmapTab() {
     }
   }
 
+  const renderXAxis = () => {
+    if (!gridSize) return null;
+    const ticks = [];
+    const interval = getNiceInterval(gridSize.width, 10);
+    for (let i = 0; i <= gridSize.width; i += interval) {
+      ticks.push(
+        <div key={`x-${i}`} className="absolute top-0 text-center text-xs text-muted-foreground" style={{ left: `${i * scaledCellSize}px`, transform: 'translateX(-50%)' }}>
+          <div className="absolute top-1 w-px h-1 bg-muted-foreground" />
+          <span className="absolute top-2">{i}</span>
+        </div>
+      );
+    }
+    return <div style={{ width: gridSize.width * scaledCellSize }}>{ticks}</div>;
+  };
+  
+  const renderYAxis = () => {
+    if (!gridSize) return null;
+    const ticks = [];
+    const interval = getNiceInterval(gridSize.height, 10);
+    for (let i = 0; i <= gridSize.height; i += interval) {
+      ticks.push(
+        <div key={`y-${i}`} className="absolute right-0 text-right text-xs text-muted-foreground" style={{ top: `${i * scaledCellSize}px`, transform: 'translateY(-50%)' }}>
+          <div className="absolute right-1 w-1 h-px bg-muted-foreground" />
+          <span className="absolute right-2.5">{i}</span>
+        </div>
+      );
+    }
+    return <div style={{ height: gridSize.height * scaledCellSize }}>{ticks}</div>;
+  };
+  
+
   // --- Render ---
   if (!inspectionResult) return null
 
@@ -287,22 +333,41 @@ export function TwoDeeHeatmapTab() {
         <CardHeader>
           <CardTitle className="font-headline">2D Heatmap</CardTitle>
         </CardHeader>
-        <CardContent className="flex-grow relative p-0 border-t">
-            <ScrollArea className="w-full h-full">
-                 <div 
-                    className="relative"
-                 >
-                    <canvas 
-                        ref={canvasRef}
-                        onMouseMove={handleMouseMove}
-                        onMouseLeave={() => setHoveredPoint(null)}
-                        onClick={handleClick}
-                        style={{ width: gridSize ? gridSize.width * scaledCellSize : '100%', height: gridSize ? gridSize.height * scaledCellSize : '100%' }}
-                    />
+        <CardContent className="flex-grow relative p-0 border-t flex flex-col">
+            <div className="relative w-full h-full flex">
+                {/* Y Axis */}
+                <div className="flex-shrink-0" style={{ width: AXIS_SIZE }}>
+                    <div ref={yAxisRef} className="relative h-full">
+                       {renderYAxis()}
+                    </div>
                 </div>
-                <ScrollBar orientation="horizontal" />
-                <ScrollBar orientation="vertical" />
-            </ScrollArea>
+
+                <div className="flex-grow flex flex-col overflow-hidden">
+                    {/* X Axis */}
+                    <div className="flex-shrink-0 overflow-hidden" style={{ height: AXIS_SIZE }}>
+                       <div ref={xAxisRef} className="relative h-full">
+                          {renderXAxis()}
+                       </div>
+                    </div>
+                    
+                    {/* Canvas Scroll Area */}
+                    <div ref={scrollContainerRef} className="flex-grow overflow-auto" onScroll={handleScroll}>
+                         <div 
+                            className="relative"
+                            style={{ width: gridSize.width * scaledCellSize, height: gridSize.height * scaledCellSize }}
+                         >
+                            <canvas 
+                                ref={canvasRef}
+                                onMouseMove={handleMouseMove}
+                                onMouseLeave={() => setHoveredPoint(null)}
+                                onClick={handleClick}
+                                className="absolute top-0 left-0"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {hoveredPoint && (
               <div
                 className="fixed p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border z-20"
@@ -312,7 +377,7 @@ export function TwoDeeHeatmapTab() {
                 }}
               >
                 <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
-                {hoveredPoint.plateId && <div className="text-muted-foreground">{hoveredPoint.plateId}</div>}
+                 {hoveredPoint.plateId && <div className="text-muted-foreground truncate max-w-[200px]">{hoveredPoint.plateId}</div>}
                 <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
                 <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
               </div>
@@ -336,7 +401,7 @@ export function TwoDeeHeatmapTab() {
                       <Label htmlFor="pct-2d" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized (%)</Label>                    </div>
                 </RadioGroup>
                 <div className="space-y-2">
-                   <Label>Zoom</Label>
+                   <Label>Zoom ({Math.round(zoom*100)}%)</Label>
                    <div className="flex gap-2">
                     <Button variant="outline" size="icon" onClick={() => adjustZoom(1.5)}><ZoomIn/></Button>
                     <Button variant="outline" size="icon" onClick={() => adjustZoom(1/1.5)}><ZoomOut/></Button>
