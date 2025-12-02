@@ -8,6 +8,7 @@ import { Label } from '../ui/label'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { Percent, Ruler, ZoomIn, Search, MousePointer, ZoomOut, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
+import { ScrollArea } from '../ui/scroll-area'
 
 // --- Color Helper Functions ---
 const getAbsColor = (percentage: number | null): string => {
@@ -99,21 +100,19 @@ const getNiceInterval = (range: number, maxTicks: number): number => {
 export function TwoDeeHeatmapTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const xAxisRef = useRef<HTMLCanvasElement>(null)
   const yAxisRef = useRef<HTMLCanvasElement>(null)
   
-  const [transform, setTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 })
-  const [isPanning, setIsPanning] = useState(false)
-  const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 })
-  const [hoveredPoint, setHoveredPoint] = useState<any>(null)
+  const [zoom, setZoom] = useState(1);
+  const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
   const { mergedGrid, stats, nominalThickness, plates } = inspectionResult || {};
   const { gridSize, minThickness: minEffT, maxThickness: maxEffT } = stats || {};
-  const effTRange = (maxEffT && minEffT) ? maxEffT - minEffT : 0;
   
   const AXIS_SIZE = 40;
-  const CELL_SIZE = 6; // Base cell size
+  const BASE_CELL_SIZE = 6;
+  const scaledCellSize = BASE_CELL_SIZE * zoom;
 
   const plateBoundaries = useMemo(() => {
     if (!mergedGrid || plates.length <= 1) return [];
@@ -155,10 +154,10 @@ export function TwoDeeHeatmapTab() {
   // --- Drawing Logic ---
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !gridSize || !containerRef.current || !mergedGrid) return;
+    if (!canvas || !gridSize || !mergedGrid) return;
     
-    const canvasWidth = gridSize.width * CELL_SIZE;
-    const canvasHeight = gridSize.height * CELL_SIZE;
+    const canvasWidth = gridSize.width * scaledCellSize;
+    const canvasHeight = gridSize.height * scaledCellSize;
     
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
@@ -193,48 +192,47 @@ export function TwoDeeHeatmapTab() {
         
         if (color !== 'transparent') {
           ctx.fillStyle = color;
-          ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+          ctx.fillRect(x * scaledCellSize, y * scaledCellSize, scaledCellSize, scaledCellSize);
         }
       }
     }
     
     // Grid Lines (only when zoomed in)
-    if (transform.scale > 8) {
+    if (zoom > 8) {
       ctx.strokeStyle = "rgba(100, 100, 100, 0.2)";
-      ctx.lineWidth = 1 / transform.scale;
+      ctx.lineWidth = 1;
       for (let x = 0; x <= gridSize.width; x++) {
         ctx.beginPath();
-        ctx.moveTo(x * CELL_SIZE, 0);
-        ctx.lineTo(x * CELL_SIZE, canvasHeight);
+        ctx.moveTo(x * scaledCellSize, 0);
+        ctx.lineTo(x * scaledCellSize, canvasHeight);
         ctx.stroke();
       }
       for (let y = 0; y <= gridSize.height; y++) {
         ctx.beginPath();
-        ctx.moveTo(0, y * CELL_SIZE);
-        ctx.lineTo(canvasWidth, y * CELL_SIZE);
+        ctx.moveTo(0, y * scaledCellSize);
+        ctx.lineTo(canvasWidth, y * scaledCellSize);
         ctx.stroke();
       }
     }
     
     // Plate Boundaries
     ctx.strokeStyle = '#FFFFFF'; // White boundaries
-    ctx.lineWidth = 4 / transform.scale;
+    ctx.lineWidth = Math.max(2, 4 * zoom / 10);
     plateBoundaries.forEach(b => {
-        ctx.strokeRect(b.x * CELL_SIZE, b.y * CELL_SIZE, b.width * CELL_SIZE, b.height * CELL_SIZE);
+        ctx.strokeRect(b.x * scaledCellSize, b.y * scaledCellSize, b.width * scaledCellSize, b.height * scaledCellSize);
     });
-
 
     // Selection outline
     if (selectedPoint) {
         ctx.strokeStyle = '#00ffff'; // Cyan
-        ctx.lineWidth = 4 / transform.scale;
-        ctx.strokeRect(selectedPoint.x * CELL_SIZE, selectedPoint.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.lineWidth = Math.max(2, 4 * zoom / 10);
+        ctx.strokeRect(selectedPoint.x * scaledCellSize, selectedPoint.y * scaledCellSize, scaledCellSize, scaledCellSize);
     }
     
-  }, [gridSize, colorMode, mergedGrid, minEffT, effTRange, transform.scale, selectedPoint, plateBoundaries]);
+  }, [gridSize, colorMode, mergedGrid, zoom, scaledCellSize, selectedPoint, plateBoundaries]);
 
-  const drawAxes = useCallback(() => {
-    if (!gridSize || !xAxisRef.current || !yAxisRef.current || !containerRef.current) return;
+  const drawAxes = useCallback((scrollLeft = 0, scrollTop = 0) => {
+    if (!gridSize || !xAxisRef.current || !yAxisRef.current || !scrollContainerRef.current) return;
     
     const dpr = window.devicePixelRatio || 1;
     const xAxis = xAxisRef.current;
@@ -242,8 +240,8 @@ export function TwoDeeHeatmapTab() {
     const xCtx = xAxis.getContext('2d')!;
     const yCtx = yAxis.getContext('2d')!;
 
-    const xAxisWidth = containerRef.current!.clientWidth - AXIS_SIZE;
-    const yAxisHeight = containerRef.current!.clientHeight - AXIS_SIZE;
+    const xAxisWidth = scrollContainerRef.current!.clientWidth;
+    const yAxisHeight = scrollContainerRef.current!.clientHeight;
 
     xAxis.width = xAxisWidth * dpr;
     xAxis.height = AXIS_SIZE * dpr;
@@ -267,89 +265,66 @@ export function TwoDeeHeatmapTab() {
     xCtx.font = '10px sans-serif';
     yCtx.font = '10px sans-serif';
     yCtx.textAlign = "right";
-
-    const scaledCellSize = CELL_SIZE * transform.scale;
+    
     const xInterval = getNiceInterval((xAxisWidth / scaledCellSize), 10);
     const yInterval = getNiceInterval((yAxisHeight / scaledCellSize), 10);
     
     // Draw X-Axis Ticks
-    for (let i = 0; i * xInterval < gridSize.width; i++) {
+    for (let i = 0; ; i++) {
         const xVal = i * xInterval;
-        const xPos = xVal * scaledCellSize - transform.offsetX;
-        if (xPos > -scaledCellSize && xPos < xAxisWidth) {
+        if (xVal > gridSize.width) break;
+        const xPos = xVal * scaledCellSize - scrollLeft + AXIS_SIZE;
+        if (xPos > AXIS_SIZE && xPos < xAxisWidth) {
             xCtx.fillText(String(xVal), xPos, 20);
             xCtx.fillRect(xPos, 0, 1, 5);
         }
     }
 
     // Draw Y-Axis Ticks
-    for (let i = 0; i * yInterval < gridSize.height; i++) {
+    for (let i = 0; ; i++) {
         const yVal = i * yInterval;
-        const yPos = yVal * scaledCellSize - transform.offsetY;
-        if (yPos > -scaledCellSize && yPos < yAxisHeight) {
+        if (yVal > gridSize.height) break;
+        const yPos = yVal * scaledCellSize - scrollTop + AXIS_SIZE;
+        if (yPos > AXIS_SIZE && yPos < yAxisHeight) {
             yCtx.fillText(String(yVal), AXIS_SIZE - 10, yPos + 3);
             yCtx.fillRect(AXIS_SIZE - 5, yPos, 5, 1);
         }
     }
-
-  }, [gridSize, transform, AXIS_SIZE]);
+  }, [gridSize, scaledCellSize, AXIS_SIZE]);
 
   useEffect(() => {
     draw();
     drawAxes();
   }, [draw, drawAxes]);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const resizeObserver = new ResizeObserver(() => {
-        draw();
-        drawAxes();
-    });
-    resizeObserver.observe(containerRef.current);
-    return () => resizeObserver.disconnect();
-  }, [draw, drawAxes]);
-
+  
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollLeft, scrollTop } = e.currentTarget;
+    drawAxes(scrollLeft, scrollTop);
+  }
 
   // --- Interaction Handlers ---
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    setIsPanning(true);
-    setLastPanPoint({ x: e.clientX, y: e.clientY });
-    e.currentTarget.style.cursor = 'grabbing';
+
+  const adjustZoom = (factor: number) => {
+    const newZoom = zoom * factor;
+    const clampedZoom = Math.max(0.2, Math.min(newZoom, 50));
+    setZoom(clampedZoom);
   };
   
-  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    setIsPanning(false);
-    e.currentTarget.style.cursor = 'grab';
-  };
-
-  const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
-    setIsPanning(false);
-    setHoveredPoint(null);
-    e.currentTarget.style.cursor = 'grab';
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    if (isPanning) {
-        const dx = e.clientX - lastPanPoint.x;
-        const dy = e.clientY - lastPanPoint.y;
-        setTransform(prev => ({
-            ...prev,
-            offsetX: prev.offsetX - dx,
-            offsetY: prev.offsetY - dy,
-        }));
-        setLastPanPoint({ x: e.clientX, y: e.clientY });
+  const resetView = () => {
+    setZoom(1);
+    if(scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo(0,0);
     }
-    
-    if (!gridSize || !mergedGrid) { setHoveredPoint(null); return; };
-    
-    const mouseX = e.clientX - rect.left - AXIS_SIZE;
-    const mouseY = e.clientY - rect.top - AXIS_SIZE;
+  };
 
-    const gridX = Math.floor((mouseX + transform.offsetX) / (CELL_SIZE * transform.scale));
-    const gridY = Math.floor((mouseY + transform.offsetY) / (CELL_SIZE * transform.scale));
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!gridSize || !mergedGrid || !canvasRef.current) { setHoveredPoint(null); return; };
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const gridX = Math.floor(x / scaledCellSize);
+    const gridY = Math.floor(y / scaledCellSize);
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
         const pointData = mergedGrid[gridY]?.[gridX];
@@ -361,43 +336,16 @@ export function TwoDeeHeatmapTab() {
     } else {
         setHoveredPoint(null);
     }
-  };
+  }
 
-  const adjustZoom = (factor: number) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    
-    const newScale = transform.scale * factor;
-    const clampedScale = Math.max(0.2, Math.min(newScale, 50));
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!gridSize || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    const mouseX = (rect.width - AXIS_SIZE) / 2;
-    const mouseY = (rect.height - AXIS_SIZE) / 2;
-
-    const newOffsetX = transform.offsetX + (mouseX / transform.scale) - (mouseX / clampedScale);
-    const newOffsetY = transform.offsetY + (mouseY / transform.scale) - (mouseY / clampedScale);
-
-    setTransform({ scale: clampedScale, offsetX: newOffsetX, offsetY: newOffsetY });
-  };
-  
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-    adjustZoom(e.deltaY < 0 ? 1.1 : 1 / 1.1);
-  };
-
-  const resetView = () => {
-    setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
-  };
-
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!gridSize) return;
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left - AXIS_SIZE;
-    const mouseY = e.clientY - rect.top - AXIS_SIZE;
-
-    const gridX = Math.floor((mouseX + transform.offsetX) / (CELL_SIZE * transform.scale));
-    const gridY = Math.floor((mouseY + transform.offsetY) / (CELL_SIZE * transform.scale));
+    const gridX = Math.floor(x / scaledCellSize);
+    const gridY = Math.floor(y / scaledCellSize);
 
     if (gridX >= 0 && gridX < gridSize.width && gridY >= 0 && gridY < gridSize.height) {
         setSelectedPoint({ x: gridX, y: gridY });
@@ -413,26 +361,35 @@ export function TwoDeeHeatmapTab() {
         <CardHeader>
           <CardTitle className="font-headline">2D Heatmap</CardTitle>
         </CardHeader>
-        <CardContent 
-            ref={containerRef}
-            className="flex-grow relative p-0 overflow-hidden bg-muted/20 cursor-grab"
-            onMouseMove={handleMouseMove}
-            onMouseDown={handleMouseDown}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseLeave}
-            onWheel={handleWheel}
-            onDoubleClick={resetView}
-            onClick={handleClick}
+        <CardContent className="flex-grow relative p-0 border-t"
             onContextMenu={(e) => e.preventDefault()}
         >
-            <canvas ref={yAxisRef} className="absolute left-0 top-[--axis-size]" style={{ '--axis-size': `${AXIS_SIZE}px` } as React.CSSProperties} />
-            <canvas ref={xAxisRef} className="absolute left-[--axis-size] top-0" style={{ '--axis-size': `${AXIS_SIZE}px` } as React.CSSProperties} />
+            <canvas ref={yAxisRef} className="absolute left-0 top-0 bg-card z-10" />
+            <canvas ref={xAxisRef} className="absolute left-0 top-0 bg-card z-10" />
             
-            <div className="absolute overflow-hidden" style={{ top: AXIS_SIZE, left: AXIS_SIZE, right: 0, bottom: 0}}>
-                <div style={{ width: gridSize ? gridSize.width * CELL_SIZE : '100%', height: gridSize ? gridSize.height * CELL_SIZE : '100%', transformOrigin: 'top left', transform: `scale(${transform.scale}) translate(-${transform.offsetX / transform.scale}px, -${transform.offsetY / transform.scale}px)`}}>
-                    <canvas ref={canvasRef} />
+            <ScrollArea
+                ref={scrollContainerRef}
+                className="w-full h-full"
+                onScroll={handleScroll}
+            >
+                <div 
+                    className="relative" 
+                    style={{
+                        width: gridSize ? gridSize.width * scaledCellSize : '100%',
+                        height: gridSize ? gridSize.height * scaledCellSize : '100%',
+                        paddingTop: AXIS_SIZE,
+                        paddingLeft: AXIS_SIZE
+                    }}
+                >
+                    <canvas 
+                        ref={canvasRef}
+                        className="absolute top-0 left-0"
+                        onMouseMove={handleMouseMove}
+                        onMouseLeave={() => setHoveredPoint(null)}
+                        onClick={handleClick}
+                    />
                 </div>
-            </div>
+            </ScrollArea>
 
             {hoveredPoint && (
               <div
@@ -449,11 +406,6 @@ export function TwoDeeHeatmapTab() {
                 <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
               </div>
             )}
-            <div className="absolute bottom-2 right-2 text-xs text-muted-foreground pointer-events-none p-2 rounded bg-background/80 border z-10">
-              <p className="flex items-center gap-1"><MousePointer className="h-3 w-3"/> Drag to Pan</p>
-              <p className="flex items-center gap-1"><ZoomIn className="h-3 w-3"/> Scroll to Zoom</p>
-              <p className="flex items-center gap-1"><Search className="h-3 w-3"/> Dbl-Click to Reset</p>
-            </div>
         </CardContent>
       </Card>
       <div className="md:col-span-1 space-y-4">
