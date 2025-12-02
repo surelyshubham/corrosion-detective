@@ -27,7 +27,7 @@ const getNormalizedColor = (normalizedPercent: number | null): string => {
 
 
 // --- UI Components ---
-const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
+const ColorLegend = ({ mode, min, max, nominal }: { mode: ColorMode, min: number, max: number, nominal: number}) => {
     const renderMmLegend = () => {
         const levels = [
             { label: `> 95%`, color: '#00ff00' },
@@ -37,7 +37,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
         ];
         return (
             <>
-                <div className="font-medium text-xs mb-1">Condition (mm)</div>
+                <div className="font-medium text-xs mb-1">Condition (of {nominal}mm)</div>
                 {levels.map(l => (
                     <div key={l.label} className="flex items-center gap-2 text-xs">
                         <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: l.color }} />
@@ -49,8 +49,6 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     }
 
     const renderPercentLegend = () => {
-        const min = stats.minThickness;
-        const max = stats.maxThickness;
         const levels = [
             { pct: 1, label: `${max.toFixed(2)}mm (Max)` },
             { pct: 0.75, label: '' },
@@ -60,7 +58,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
         ];
         return (
              <>
-                <div className="font-medium text-xs mb-1">Normalized (%)</div>
+                <div className="font-medium text-xs mb-1">Normalized Thickness</div>
                 <div className="flex flex-col-reverse">
                 {levels.map(l => (
                     <div key={l.pct} className="flex items-center gap-2 text-xs">
@@ -107,21 +105,22 @@ export function TwoDeeHeatmapTab() {
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
   const { mergedGrid, stats, nominalThickness, plates } = inspectionResult || {};
-  const { gridSize, minThickness: minEffT, maxThickness: maxEffT } = stats || {};
+  const { gridSize, minThickness, maxThickness } = stats || {};
   
   const BASE_CELL_SIZE = 6;
   const scaledCellSize = BASE_CELL_SIZE * zoom;
   const AXIS_SIZE = 35; // Space for axis labels
 
+  const plateIds = useMemo(() => plates?.map(p => p.id), [plates]);
+
   const plateBoundaries = useMemo(() => {
-    if (!mergedGrid || !plates || plates.length <= 1) return [];
+    if (!mergedGrid || !plateIds || plateIds.length <= 1) return [];
 
     const boundaries: { x: number; y: number; width: number; height: number, plateId: string }[] = [];
     const height = mergedGrid.length;
     if (height === 0) return [];
     const width = mergedGrid[0].length;
     
-    const plateIds = plates.map(p => p.id);
     plateIds.forEach(id => {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       let found = false;
@@ -147,31 +146,29 @@ export function TwoDeeHeatmapTab() {
       }
     });
     return boundaries;
-  }, [mergedGrid, plates]);
+  }, [mergedGrid, plateIds]);
 
 
   // --- Drawing Logic ---
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!gridSize || !mergedGrid) return;
+    if (!gridSize || !mergedGrid || !minThickness || !maxThickness) return;
     
     const canvasWidth = gridSize.width * scaledCellSize;
     const canvasHeight = gridSize.height * scaledCellSize;
     
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
+    canvas!.width = canvasWidth;
+    canvas!.height = canvasHeight;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas!.getContext('2d');
     if (!ctx) return;
     
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card').trim();
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas!.width, canvas!.height);
 
 
     // Heatmap
-    const allEffThicknesses = mergedGrid.flat().map(c => c?.effectiveThickness).filter(t => t !== null) as number[];
-    const minEffT = Math.min(...allEffThicknesses);
-    const effTRange = Math.max(...allEffThicknesses) - minEffT;
+    const effTRange = maxThickness - minThickness;
     
     for (let y = 0; y < gridSize.height; y++) {
       for (let x = 0; x < gridSize.width; x++) {
@@ -182,7 +179,7 @@ export function TwoDeeHeatmapTab() {
           color = 'transparent';
         } else if (colorMode === '%') {
             const normalized = effTRange > 0
-                ? (point.effectiveThickness - minEffT) / effTRange
+                ? (point.effectiveThickness - minThickness) / effTRange
                 : 0;
             color = getNormalizedColor(normalized);
         } else {
@@ -228,7 +225,7 @@ export function TwoDeeHeatmapTab() {
         ctx.strokeRect(selectedPoint.x * scaledCellSize, selectedPoint.y * scaledCellSize, scaledCellSize, scaledCellSize);
     }
     
-  }, [gridSize, colorMode, mergedGrid, zoom, scaledCellSize, selectedPoint, plateBoundaries]);
+  }, [gridSize, colorMode, mergedGrid, zoom, scaledCellSize, selectedPoint, plateBoundaries, minThickness, maxThickness]);
 
   useEffect(() => {
     draw();
@@ -324,7 +321,7 @@ export function TwoDeeHeatmapTab() {
   
 
   // --- Render ---
-  if (!inspectionResult) return null
+  if (!inspectionResult || !stats) return null
 
   return (
     <div className="grid md:grid-cols-4 gap-6 h-full">
@@ -353,7 +350,7 @@ export function TwoDeeHeatmapTab() {
                     <div ref={scrollContainerRef} className="flex-grow overflow-auto" onScroll={handleScroll}>
                          <div 
                             className="relative"
-                            style={{ width: gridSize.width * scaledCellSize, height: gridSize.height * scaledCellSize }}
+                            style={{ width: (gridSize?.width ?? 0) * scaledCellSize, height: (gridSize?.height ?? 0) * scaledCellSize }}
                          >
                             <canvas 
                                 ref={canvasRef}
@@ -377,6 +374,7 @@ export function TwoDeeHeatmapTab() {
               >
                 <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
                  {hoveredPoint.plateId && <div className="text-muted-foreground truncate max-w-[200px]">{hoveredPoint.plateId}</div>}
+                <div>Raw Thick: {hoveredPoint.rawThickness?.toFixed(2) ?? 'ND'} mm</div>
                 <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
                 <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
               </div>
@@ -393,11 +391,11 @@ export function TwoDeeHeatmapTab() {
                     <Label>Color Scale</Label>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="mm" id="mm-2d" />
-                      <Label htmlFor="mm-2d" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Condition (mm)</Label>
+                      <Label htmlFor="mm-2d" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Condition</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="%" id="pct-2d" />
-                      <Label htmlFor="pct-2d" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized (%)</Label>                    </div>
+                      <Label htmlFor="pct-2d" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized</Label>                    </div>
                 </RadioGroup>
                 <div className="space-y-2">
                    <Label>Zoom ({Math.round(zoom*100)}%)</Label>
@@ -409,12 +407,10 @@ export function TwoDeeHeatmapTab() {
                 </div>
             </CardContent>
         </Card>
-        {stats && nominalThickness && (
-          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
+        {stats && nominalThickness && minThickness !== undefined && maxThickness !== undefined && (
+          <ColorLegend mode={colorMode} min={minThickness} max={maxThickness} nominal={nominalThickness} />
         )}
       </div>
     </div>
   )
 }
-
-    
