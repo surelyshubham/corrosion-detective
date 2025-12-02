@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, type PersistOptions } from 'zustand/middleware';
-import type { MergedInspectionResult, AIInsight, Plate } from '@/lib/types';
+import type { MergedInspectionResult, AIInsight, Plate, MergedCell } from '@/lib/types';
 import { processData, reprocessMergedData } from '@/lib/data-processor';
 
 export type ColorMode = 'mm' | '%';
@@ -25,7 +25,14 @@ export const useInspectionStore = create<InspectionState>()(
       selectedPoint: null,
       colorMode: 'mm',
       
-      setInspectionResult: (result) => set({ inspectionResult: result }),
+      setInspectionResult: (result) => {
+        // When clearing data, also clear other related states
+        if (result === null) {
+          set({ inspectionResult: null, selectedPoint: null, isLoading: false });
+        } else {
+          set({ inspectionResult: result });
+        }
+      },
       
       setIsLoading: (isLoading) => set({ isLoading }),
       
@@ -47,7 +54,24 @@ export const useInspectionStore = create<InspectionState>()(
 
       addPlate: (newPlate, mergeDirection) => {
         const currentResult = get().inspectionResult;
-        if (!currentResult) {
+        
+        // If nominal thickness has changed, reprocess all existing plates
+        const platesToProcess = (currentResult?.plates || []).map(p => {
+            if (p.nominalThickness !== newPlate.nominalThickness) {
+                const { processedData, stats } = processData(p.processedData, newPlate.nominalThickness);
+                return { ...p, nominalThickness: newPlate.nominalThickness, processedData, stats };
+            }
+            return p;
+        });
+
+        const initialResult = platesToProcess.length === 0 ? null : {
+            ...currentResult,
+            plates: platesToProcess,
+            nominalThickness: newPlate.nominalThickness,
+        };
+
+
+        if (!initialResult) {
           // This is the first plate
           const { processedData, stats, condition } = processData(newPlate.processedData, newPlate.nominalThickness);
           const grid: MergedInspectionResult['mergedGrid'] = [];
@@ -80,16 +104,24 @@ export const useInspectionStore = create<InspectionState>()(
         }
 
         // Merging with existing grid
-        const oldGrid = currentResult.mergedGrid;
+        const oldGrid = initialResult.mergedGrid;
         const oldHeight = oldGrid.length;
         const oldWidth = oldGrid[0]?.length || 0;
         
-        const newPlateGrid: (typeof newPlate.processedData[0] | undefined)[][] = [];
-        const newPlateMap = new Map(newPlate.processedData.map(p => [`${p.x},${p.y}`, p]));
+        const newPlateGrid: (MergedCell & {x:number, y:number})[][] = [];
+        const newPlateMap = new Map(newPlate.processedData.map(p => [`${p.x},${p.y}`, {...p, plateId: newPlate.id}]));
         for (let y = 0; y < newPlate.stats.gridSize.height; y++) {
             newPlateGrid[y] = [];
             for (let x = 0; x < newPlate.stats.gridSize.width; x++) {
-                newPlateGrid[y][x] = newPlateMap.get(`${x},${y}`);
+                const point = newPlateMap.get(`${x},${y}`);
+                newPlateGrid[y][x] = {
+                  plateId: point ? newPlate.id : null,
+                  rawThickness: point?.rawThickness ?? null,
+                  effectiveThickness: point?.effectiveThickness ?? null,
+                  percentage: point?.percentage ?? null,
+                  x,
+                  y
+                };
             }
         }
 
@@ -97,18 +129,11 @@ export const useInspectionStore = create<InspectionState>()(
 
         if (mergeDirection === 'bottom') {
             newMergedGrid = [...oldGrid];
-            // In a real scenario, you might add a gap here based on coordinates.
-            // For this implementation, we'll just stitch directly.
             for (let y = 0; y < newPlate.stats.gridSize.height; y++) {
                 const newRow: MergedInspectionResult['mergedGrid'][0] = [];
                 for (let x = 0; x < Math.max(oldWidth, newPlate.stats.gridSize.width); x++) {
                     const point = newPlateGrid[y]?.[x];
-                    newRow[x] = {
-                        plateId: point ? newPlate.id : null,
-                        rawThickness: point?.rawThickness ?? null,
-                        effectiveThickness: point?.effectiveThickness ?? null,
-                        percentage: point?.percentage ?? null,
-                    };
+                    newRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
                 }
                 newMergedGrid.push(newRow);
             }
@@ -117,12 +142,7 @@ export const useInspectionStore = create<InspectionState>()(
                 const newRow: MergedInspectionResult['mergedGrid'][0] = [];
                 for (let x = 0; x < Math.max(oldWidth, newPlate.stats.gridSize.width); x++) {
                     const point = newPlateGrid[y]?.[x];
-                    newRow[x] = {
-                        plateId: point ? newPlate.id : null,
-                        rawThickness: point?.rawThickness ?? null,
-                        effectiveThickness: point?.effectiveThickness ?? null,
-                        percentage: point?.percentage ?? null,
-                    };
+                    newRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
                 }
                 newMergedGrid.push(newRow);
             }
@@ -132,18 +152,13 @@ export const useInspectionStore = create<InspectionState>()(
             for (let y = 0; y < newHeight; y++) {
                 const oldRow = oldGrid[y] || [];
                 const newPlateRow = newPlateGrid[y] || [];
-                const mergedRow: MergedInspectionResult['mergedGrid'][0] = [];
-                for(let x=0; x < oldWidth; x++) {
-                    mergedRow[x] = oldRow[x] || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
+                const mergedRow: MergedInspectionResult['mergedGrid'][0] = [...oldRow];
+                 while (mergedRow.length < oldWidth) {
+                  mergedRow.push({ plateId: null, rawThickness: null, effectiveThickness: null, percentage: null });
                 }
                 for(let x=0; x < newPlate.stats.gridSize.width; x++) {
                     const point = newPlateRow[x];
-                    mergedRow[oldWidth + x] = {
-                        plateId: point ? newPlate.id : null,
-                        rawThickness: point?.rawThickness ?? null,
-                        effectiveThickness: point?.effectiveThickness ?? null,
-                        percentage: point?.percentage ?? null,
-                    };
+                    mergedRow[oldWidth + x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
                 }
                 newMergedGrid.push(mergedRow);
             }
@@ -155,16 +170,13 @@ export const useInspectionStore = create<InspectionState>()(
                 const mergedRow: MergedInspectionResult['mergedGrid'][0] = [];
                  for(let x=0; x < newPlate.stats.gridSize.width; x++) {
                     const point = newPlateRow[x];
-                    mergedRow[x] = {
-                        plateId: point ? newPlate.id : null,
-                        rawThickness: point?.rawThickness ?? null,
-                        effectiveThickness: point?.effectiveThickness ?? null,
-                        percentage: point?.percentage ?? null,
-                    };
+                    mergedRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
                 }
-                for(let x=0; x < oldWidth; x++) {
-                    mergedRow[newPlate.stats.gridSize.width + x] = oldRow[x] || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
+                // Pad with empty cells if new plate is narrower
+                while (mergedRow.length < newPlate.stats.gridSize.width) {
+                  mergedRow.push({ plateId: null, rawThickness: null, effectiveThickness: null, percentage: null });
                 }
+                mergedRow.push(...oldRow);
                 newMergedGrid.push(mergedRow);
             }
         }
@@ -178,12 +190,14 @@ export const useInspectionStore = create<InspectionState>()(
         });
 
 
-        const { stats, condition } = reprocessMergedData(newMergedGrid, currentResult.nominalThickness);
+        const { stats, condition } = reprocessMergedData(newMergedGrid, newPlate.nominalThickness);
         
         const newInspectionResult: MergedInspectionResult = {
-          ...currentResult,
-          plates: [...currentResult.plates, newPlate],
+          ...initialResult,
+          plates: [...initialResult.plates, newPlate],
           mergedGrid: newMergedGrid,
+          nominalThickness: newPlate.nominalThickness,
+          assetType: newPlate.assetType,
           stats,
           condition,
           aiInsight: null, // Reset AI insight after merge

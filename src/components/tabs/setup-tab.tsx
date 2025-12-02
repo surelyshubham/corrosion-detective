@@ -28,19 +28,27 @@ const setupSchema = z.object({
 type SetupFormValues = z.infer<typeof setupSchema>
 
 export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
-  const { inspectionResult } = useInspectionStore();
+  const { inspectionResult, setInspectionResult } = useInspectionStore();
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isMergeAlertOpen, setIsMergeAlertOpen] = useState(false);
 
-  const { control, handleSubmit, watch, formState: { errors }, getValues } = useForm<SetupFormValues>({
+  const { control, handleSubmit, watch, formState: { errors }, getValues, setValue } = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
       nominalThickness: inspectionResult?.nominalThickness || 6,
       assetType: inspectionResult?.assetType,
     },
   })
+  
+  React.useEffect(() => {
+    if (inspectionResult) {
+      setValue('assetType', inspectionResult.assetType);
+      setValue('nominalThickness', inspectionResult.nominalThickness);
+    }
+  }, [inspectionResult, setValue]);
+
 
   const selectedAssetType = watch('assetType')
 
@@ -106,7 +114,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                 name="assetType"
                 control={control}
                 render={({ field }) => (
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading || !!inspectionResult}>
+                  <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value} disabled={isLoading || !!inspectionResult}>
                     <SelectTrigger id="assetType">
                       <SelectValue placeholder="Select an asset type..." />
                     </SelectTrigger>
@@ -158,13 +166,13 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                 name="nominalThickness"
                 control={control}
                 render={({ field }) => (
-                  <Input id="nominalThickness" type="number" step="0.1" {...field} disabled={isLoading || !!inspectionResult} />
+                  <Input id="nominalThickness" type="number" step="0.1" {...field} disabled={isLoading} />
                 )}
               />
               {errors.nominalThickness && <p className="text-sm text-destructive">{errors.nominalThickness.message}</p>}
             </div>
 
-            <Button onClick={onSubmit} className="w-full" disabled={!file || !selectedAssetType || isLoading}>
+            <Button onClick={handleSubmit(onSubmit)} className="w-full" disabled={!file || !selectedAssetType || isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Processing...' : (inspectionResult ? 'Process & Merge File' : 'Process File')}
             </Button>
@@ -178,6 +186,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                         <ul className="list-disc pl-5">
                             {inspectionResult.plates.map(p => <li key={p.id} className="truncate">{p.fileName}</li>)}
                         </ul>
+                         <Button variant="link" className="p-0 h-auto mt-2" onClick={() => setInspectionResult(null)}>Clear all plates</Button>
                     </CardContent>
                 </Card>
             )}
@@ -196,16 +205,16 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="grid grid-cols-2 gap-4">
-            <Button variant="outline" onClick={() => { processSubmit('top'); setIsMergeAlertOpen(false); }}>
+            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('top'))(); setIsMergeAlertOpen(false); }}>
               <ArrowUp className="mr-2"/>Attach to Top
             </Button>
-            <Button variant="outline" onClick={() => { processSubmit('bottom'); setIsMergeAlertOpen(false); }}>
+            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('bottom'))(); setIsMergeAlertOpen(false); }}>
               <ArrowDown className="mr-2"/>Attach to Bottom
             </Button>
-            <Button variant="outline" onClick={() => { processSubmit('left'); setIsMergeAlertOpen(false); }}>
+            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('left'))(); setIsMergeAlertOpen(false); }}>
               <ArrowLeft className="mr-2"/>Attach to Left
             </Button>
-            <Button variant="outline" onClick={() => { processSubmit('right'); setIsMergeAlertOpen(false); }}>
+            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('right'))(); setIsMergeAlertOpen(false); }}>
               <ArrowRight className="mr-2"/>Attach to Right
             </Button>
             <AlertDialogCancel className="col-span-2 mt-2">Cancel</AlertDialogCancel>

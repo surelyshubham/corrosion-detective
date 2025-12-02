@@ -381,16 +381,33 @@ export function ThreeDeeViewTab() {
             const intersect = intersects[0];
             if (!intersect.face) return;
 
-            const vertIndex = intersect.face.a;
-            const x = vertIndex % gridSize.width;
-            const y = Math.floor(vertIndex / gridSize.width);
-            
-            const cellData = mergedGrid[y]?.[x];
+            // This logic assumes a non-indexed BufferGeometry, which PlaneGeometry is.
+            // We check vertices a, b, and c of the intersected face.
+            const indices = [intersect.face.a, intersect.face.b, intersect.face.c];
+            let closestIndex = -1;
+            let minDistance = Infinity;
 
-            if (cellData) {
-                 setHoveredPoint({ x: x, y: y, ...cellData, clientX: event.clientX, clientY: event.clientY });
+            indices.forEach(index => {
+                const vertex = new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, index);
+                const distance = intersect.point.distanceTo(vertex);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = index;
+                }
+            });
+
+            if (closestIndex !== -1) {
+                const x = closestIndex % gridSize.width;
+                const y = Math.floor(closestIndex / gridSize.width);
+                const cellData = mergedGrid[y]?.[x];
+
+                if (cellData) {
+                    setHoveredPoint({ x: x, y: y, ...cellData, clientX: event.clientX, clientY: event.clientY });
+                } else {
+                    setHoveredPoint(null);
+                }
             } else {
-                 setHoveredPoint(null);
+               setHoveredPoint(null);
             }
         } else {
             setHoveredPoint(null);
@@ -426,6 +443,25 @@ export function ThreeDeeViewTab() {
         controlsRef.current.update();
     }
   }
+
+  const setView = (view: 'top' | 'side' | 'front') => {
+    if (cameraRef.current && controlsRef.current) {
+        controlsRef.current.target.set(0, 0, 0);
+        switch (view) {
+            case 'top':
+                cameraRef.current.position.set(0, VISUAL_WIDTH, 0);
+                break;
+            case 'side':
+                cameraRef.current.position.set(VISUAL_WIDTH, 5, 0);
+                break;
+            case 'front':
+                cameraRef.current.position.set(0, 5, VISUAL_WIDTH);
+                break;
+        }
+        controlsRef.current.update();
+    }
+  };
+
 
   return (
     <div className="grid md:grid-cols-4 gap-6 h-full">
@@ -466,7 +502,7 @@ export function ThreeDeeViewTab() {
                 <RadioGroup value={colorMode} onValueChange={(val) => setColorMode(val as ColorMode)}>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="mm" id="mm" />
-                    <Label htmlFor="mm" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Absolute (mm)</Label>
+                    <Label htmlFor="mm" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Condition (mm)</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="%" id="%" />
@@ -488,9 +524,6 @@ export function ThreeDeeViewTab() {
             </div>
           </CardContent>
         </Card>
-        {stats && nominalThickness && (
-          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
-        )}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-headline">Camera</CardTitle>
@@ -499,8 +532,14 @@ export function ThreeDeeViewTab() {
             <Button variant="outline" onClick={resetCamera} className="col-span-2">
               <RefreshCw className="mr-2 h-4 w-4" /> Reset View
             </Button>
+            <Button variant="outline" onClick={() => setView('top')}>Top</Button>
+            <Button variant="outline" onClick={() => setView('side')}>Side</Button>
+            <Button variant="outline" onClick={() => setView('front')}>Front</Button>
           </CardContent>
         </Card>
+        {stats && nominalThickness && (
+          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
+        )}
       </div>
     </div>
   )

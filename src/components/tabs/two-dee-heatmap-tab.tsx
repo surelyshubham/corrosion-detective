@@ -6,7 +6,8 @@ import { useInspectionStore, type ColorMode } from '@/store/use-inspection-store
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '../ui/label'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
-import { Percent, Ruler, ZoomIn, Search, MousePointer } from 'lucide-react'
+import { Percent, Ruler, ZoomIn, Search, MousePointer, ZoomOut, RefreshCw } from 'lucide-react'
+import { Button } from '../ui/button'
 
 // --- Color Helper Functions ---
 const getAbsColor = (percentage: number | null): string => {
@@ -86,8 +87,9 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
 }
 
 const getNiceInterval = (range: number, maxTicks: number): number => {
+    if (range === 0) return 1;
     const roughStep = range / maxTicks;
-    const goodSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+    const goodSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
     const step = goodSteps.find(s => s > roughStep) || goodSteps[goodSteps.length - 1];
     return step;
 };
@@ -264,25 +266,28 @@ export function TwoDeeHeatmapTab() {
     yCtx.fillStyle = `hsl(${foregroundColor})`;
     xCtx.font = '10px sans-serif';
     yCtx.font = '10px sans-serif';
+    yCtx.textAlign = "right";
 
     const scaledCellSize = CELL_SIZE * transform.scale;
-    const xInterval = getNiceInterval(xAxisWidth / scaledCellSize, 10);
-    const yInterval = getNiceInterval(yAxisHeight / scaledCellSize, 10);
+    const xInterval = getNiceInterval((xAxisWidth / scaledCellSize), 10);
+    const yInterval = getNiceInterval((yAxisHeight / scaledCellSize), 10);
     
     // Draw X-Axis Ticks
     for (let i = 0; i * xInterval < gridSize.width; i++) {
-        const xPos = i * xInterval * scaledCellSize - transform.offsetX;
+        const xVal = i * xInterval;
+        const xPos = xVal * scaledCellSize - transform.offsetX;
         if (xPos > -scaledCellSize && xPos < xAxisWidth) {
-            xCtx.fillText(String(i * xInterval), xPos, 20);
+            xCtx.fillText(String(xVal), xPos, 20);
             xCtx.fillRect(xPos, 0, 1, 5);
         }
     }
 
     // Draw Y-Axis Ticks
     for (let i = 0; i * yInterval < gridSize.height; i++) {
-        const yPos = i * yInterval * scaledCellSize - transform.offsetY;
+        const yVal = i * yInterval;
+        const yPos = yVal * scaledCellSize - transform.offsetY;
         if (yPos > -scaledCellSize && yPos < yAxisHeight) {
-            yCtx.fillText(String(i * yInterval), 15, yPos + 3);
+            yCtx.fillText(String(yVal), AXIS_SIZE - 10, yPos + 3);
             yCtx.fillRect(AXIS_SIZE - 5, yPos, 5, 1);
         }
     }
@@ -357,26 +362,30 @@ export function TwoDeeHeatmapTab() {
         setHoveredPoint(null);
     }
   };
-  
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
+
+  const adjustZoom = (factor: number) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     
-    const scaleAmount = 1.1;
-    const newScale = e.deltaY < 0 ? transform.scale * scaleAmount : transform.scale / scaleAmount;
+    const newScale = transform.scale * factor;
     const clampedScale = Math.max(0.2, Math.min(newScale, 50));
 
-    const mouseX = e.clientX - rect.left - AXIS_SIZE;
-    const mouseY = e.clientY - rect.top - AXIS_SIZE;
+    const mouseX = (rect.width - AXIS_SIZE) / 2;
+    const mouseY = (rect.height - AXIS_SIZE) / 2;
 
     const newOffsetX = transform.offsetX + (mouseX / transform.scale) - (mouseX / clampedScale);
     const newOffsetY = transform.offsetY + (mouseY / transform.scale) - (mouseY / clampedScale);
 
     setTransform({ scale: clampedScale, offsetX: newOffsetX, offsetY: newOffsetY });
   };
+  
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!containerRef.current) return;
+    adjustZoom(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  };
 
-  const handleDoubleClick = () => {
+  const resetView = () => {
     setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
   };
 
@@ -412,7 +421,7 @@ export function TwoDeeHeatmapTab() {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
             onWheel={handleWheel}
-            onDoubleClick={handleDoubleClick}
+            onDoubleClick={resetView}
             onClick={handleClick}
             onContextMenu={(e) => e.preventDefault()}
         >
@@ -452,18 +461,26 @@ export function TwoDeeHeatmapTab() {
             <CardHeader>
                 <CardTitle className="font-headline text-lg">Controls</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
                 <RadioGroup value={colorMode} onValueChange={(val) => setColorMode(val as ColorMode)} className="space-y-2">
                     <Label>Color Scale</Label>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="mm" id="mm-2d" />
-                      <Label htmlFor="mm-2d" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Absolute (mm)</Label>
+                      <Label htmlFor="mm-2d" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Condition (mm)</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="%" id="pct-2d" />
                       <Label htmlFor="pct-2d" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized (%)</Label>
                     </div>
                 </RadioGroup>
+                <div className="space-y-2">
+                   <Label>Zoom</Label>
+                   <div className="flex gap-2">
+                    <Button variant="outline" size="icon" onClick={() => adjustZoom(1.5)}><ZoomIn/></Button>
+                    <Button variant="outline" size="icon" onClick={() => adjustZoom(1/1.5)}><ZoomOut/></Button>
+                    <Button variant="outline" onClick={resetView} className="flex-grow"><RefreshCw className="mr-2"/> Reset</Button>
+                   </div>
+                </div>
             </CardContent>
         </Card>
         {stats && nominalThickness && (
