@@ -32,7 +32,7 @@ const getNormalizedColor = (normalizedPercent: number | null): THREE.Color => {
 const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
     const renderMmLegend = () => {
         const levels = [
-            { label: `90-100%`, color: '#0000ff' },
+            { label: `> 90%`, color: '#0000ff' },
             { label: `80-90%`, color: '#00ff00' },
             { label: `70-80%`, color: '#ffff00' },
             { label: `< 70%`, color: '#ff0000' },

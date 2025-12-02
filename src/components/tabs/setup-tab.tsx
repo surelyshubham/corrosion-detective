@@ -10,13 +10,18 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { assetTypes, type AssetType } from '@/lib/types'
-import { FileUp, Loader2, Paperclip, X, ArrowDown, ArrowUp, ArrowLeft, ArrowRight } from 'lucide-react'
+import { FileUp, Loader2, Paperclip, X, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Merge } from 'lucide-react'
 import { DummyDataGenerator } from '@/components/dummy-data-generator'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
+import { useToast } from '@/hooks/use-toast'
 
 interface SetupTabProps {
-  onFileProcess: (file: File, assetType: AssetType, nominalThickness: number, mergeDirection: 'left' | 'right' | 'top' | 'bottom') => void
+  onFileProcess: (file: File, assetType: AssetType, nominalThickness: number, options: {
+    direction: 'left' | 'right' | 'top' | 'bottom';
+    start: number;
+  }) => void
   isLoading: boolean
 }
 
@@ -27,8 +32,17 @@ const setupSchema = z.object({
 
 type SetupFormValues = z.infer<typeof setupSchema>
 
+const mergeSchema = z.object({
+    direction: z.enum(['top', 'bottom', 'left', 'right']),
+    start: z.coerce.number().min(0, "Start coordinate must be positive."),
+});
+
+type MergeFormValues = z.infer<typeof mergeSchema>;
+
+
 export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
   const { inspectionResult, setInspectionResult } = useInspectionStore();
+  const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -42,13 +56,21 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
     },
   })
   
+  const mergeForm = useForm<MergeFormValues>({
+    resolver: zodResolver(mergeSchema),
+    defaultValues: {
+        direction: 'right',
+        start: inspectionResult ? inspectionResult.stats.gridSize.width : 0,
+    }
+  });
+
+
   React.useEffect(() => {
     if (inspectionResult) {
       setValue('assetType', inspectionResult.assetType);
       setValue('nominalThickness', inspectionResult.nominalThickness);
     }
   }, [inspectionResult, setValue]);
-
 
   const selectedAssetType = watch('assetType')
 
@@ -80,22 +102,50 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       }
   };
 
-  const processSubmit = (mergeDirection: 'left' | 'right' | 'top' | 'bottom') => {
-      if (!file) {
-          setFileError('An Excel file is required.');
-          return;
-      }
-      const data = getValues();
-      onFileProcess(file, data.assetType, Number(data.nominalThickness), mergeDirection);
-      setFile(null); // Clear file after processing
+  const handleInitialSubmit = () => {
+    if (!file) {
+        setFileError('An Excel file is required.');
+        return;
+    }
+    const data = getValues();
+    onFileProcess(file, data.assetType, Number(data.nominalThickness), { direction: 'right', start: 0 });
+    setFile(null); // Clear file after processing
+  };
+
+  const handleMergeSubmit = (mergeData: MergeFormValues) => {
+    if (!file) return; // Should not happen if button is disabled
+    const setupData = getValues();
+
+    const expectedStart = mergeData.direction === 'right' || mergeData.direction === 'left' 
+        ? inspectionResult!.stats.gridSize.width
+        : inspectionResult!.stats.gridSize.height;
+    
+    if (mergeData.start < expectedStart) {
+        toast({
+            variant: "destructive",
+            title: "Merge Error: Overlap Detected",
+            description: `Start coordinate (${mergeData.start}) cannot be less than the end of the existing grid (${expectedStart}). Plates would overlap.`,
+        });
+        return;
+    }
+    
+    onFileProcess(file, setupData.assetType, Number(setupData.nominalThickness), {
+      direction: mergeData.direction,
+      start: mergeData.start
+    });
+    setFile(null);
+    setIsMergeAlertOpen(false);
   };
 
   const onSubmit = () => {
     if (inspectionResult) {
+      const { gridSize } = inspectionResult.stats;
+      const direction = mergeForm.watch('direction');
+      const expectedStart = (direction === 'left' || direction === 'right') ? gridSize.width : gridSize.height;
+      mergeForm.setValue('start', expectedStart);
       setIsMergeAlertOpen(true);
     } else {
-      // It's the first file, so a direction isn't strictly necessary but we provide one.
-      processSubmit('bottom'); 
+      handleInitialSubmit();
     }
   };
   
@@ -186,7 +236,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                         <ul className="list-disc pl-5">
                             {inspectionResult.plates.map(p => <li key={p.id} className="truncate">{p.fileName}</li>)}
                         </ul>
-                         <Button variant="link" className="p-0 h-auto mt-2" onClick={() => setInspectionResult(null)}>Clear all plates</Button>
+                         <Button variant="link" className="p-0 h-auto mt-2" onClick={() => { setInspectionResult(null); mergeForm.reset(); }}>Clear all plates</Button>
                     </CardContent>
                 </Card>
             )}
@@ -197,29 +247,67 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       <DummyDataGenerator isLoading={isLoading} />
       
       <AlertDialog open={isMergeAlertOpen} onOpenChange={setIsMergeAlertOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Merge Plate</AlertDialogTitle>
-            <AlertDialogDescription>
-              You have already loaded data. Where should this new plate be attached relative to the existing plate(s)?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="grid grid-cols-2 gap-4">
-            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('top'))(); setIsMergeAlertOpen(false); }}>
-              <ArrowUp className="mr-2"/>Attach to Top
-            </Button>
-            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('bottom'))(); setIsMergeAlertOpen(false); }}>
-              <ArrowDown className="mr-2"/>Attach to Bottom
-            </Button>
-            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('left'))(); setIsMergeAlertOpen(false); }}>
-              <ArrowLeft className="mr-2"/>Attach to Left
-            </Button>
-            <Button variant="outline" onClick={() => { handleSubmit(d => processSubmit('right'))(); setIsMergeAlertOpen(false); }}>
-              <ArrowRight className="mr-2"/>Attach to Right
-            </Button>
-            <AlertDialogCancel className="col-span-2 mt-2">Cancel</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+        <form onSubmit={mergeForm.handleSubmit(handleMergeSubmit)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2"><Merge /> Merge Plate</AlertDialogTitle>
+              <AlertDialogDescription>
+                Define how to attach the new plate relative to the existing grid.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            
+            <div className="space-y-4 py-4">
+               <Controller
+                    name="direction"
+                    control={mergeForm.control}
+                    render={({ field }) => (
+                        <RadioGroup 
+                            onValueChange={(val) => {
+                                field.onChange(val);
+                                const { gridSize } = inspectionResult!.stats;
+                                const expectedStart = (val === 'left' || val === 'right') ? gridSize.width : gridSize.height;
+                                mergeForm.setValue('start', expectedStart);
+                            }} 
+                            value={field.value} 
+                            className="grid grid-cols-2 gap-4"
+                        >
+                            <Label htmlFor="right" className="flex items-center gap-2 p-4 border rounded-md cursor-pointer has-[:checked]:bg-accent has-[:checked]:border-primary">
+                                <RadioGroupItem value="right" id="right" /> Attach to Right
+                            </Label>
+                            <Label htmlFor="left" className="flex items-center gap-2 p-4 border rounded-md cursor-pointer has-[:checked]:bg-accent has-[:checked]:border-primary">
+                                <RadioGroupItem value="left" id="left" /> Attach to Left
+                            </Label>
+                            <Label htmlFor="bottom" className="flex items-center gap-2 p-4 border rounded-md cursor-pointer has-[:checked]:bg-accent has-[:checked]:border-primary">
+                                <RadioGroupItem value="bottom" id="bottom" /> Attach to Bottom
+                            </Label>
+                            <Label htmlFor="top" className="flex items-center gap-2 p-4 border rounded-md cursor-pointer has-[:checked]:bg-accent has-[:checked]:border-primary">
+                                <RadioGroupItem value="top" id="top" /> Attach to Top
+                            </Label>
+                        </RadioGroup>
+                    )}
+                />
+
+                <div className="space-y-2">
+                    <Label htmlFor="start-coord">Start Coordinate (Row/Column Index)</Label>
+                    <Input 
+                        id="start-coord"
+                        type="number"
+                        min={0}
+                        {...mergeForm.register('start')}
+                    />
+                     {mergeForm.formState.errors.start && <p className="text-sm text-destructive">{mergeForm.formState.errors.start.message}</p>}
+                    <p className="text-xs text-muted-foreground">
+                        Defines the starting row/column index for the new plate. A gap will be created if this is greater than the current grid boundary.
+                    </p>
+                </div>
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <Button type="submit">Validate & Merge</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </form>
       </AlertDialog>
     </div>
   )

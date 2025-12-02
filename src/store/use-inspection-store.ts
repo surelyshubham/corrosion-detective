@@ -8,7 +8,10 @@ export type ColorMode = 'mm' | '%';
 interface InspectionState {
   inspectionResult: MergedInspectionResult | null;
   setInspectionResult: (result: MergedInspectionResult | null) => void;
-  addPlate: (plate: Plate, mergeDirection: 'left' | 'right' | 'top' | 'bottom') => void;
+  addPlate: (plate: Plate, options: {
+    direction: 'left' | 'right' | 'top' | 'bottom';
+    start: number;
+  }) => void;
   isLoading: boolean;
   setIsLoading: (isLoading: boolean) => void;
   selectedPoint: { x: number; y: number } | null;
@@ -17,6 +20,10 @@ interface InspectionState {
   colorMode: ColorMode;
   setColorMode: (mode: ColorMode) => void;
 }
+
+const emptyCell: MergedCell = { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
+const ndGapCell: MergedCell = { plateId: 'ND', rawThickness: null, effectiveThickness: null, percentage: null };
+
 
 export const useInspectionStore = create<InspectionState>()(
     (set, get) => ({
@@ -52,7 +59,8 @@ export const useInspectionStore = create<InspectionState>()(
         }
       },
 
-      addPlate: (newPlate, mergeDirection) => {
+      addPlate: (newPlate, options) => {
+        const { direction, start } = options;
         const currentResult = get().inspectionResult;
         
         // If nominal thickness has changed, reprocess all existing plates
@@ -108,84 +116,74 @@ export const useInspectionStore = create<InspectionState>()(
         const oldHeight = oldGrid.length;
         const oldWidth = oldGrid[0]?.length || 0;
         
-        const newPlateGrid: (MergedCell & {x:number, y:number})[][] = [];
+        const newPlateGrid: MergedCell[][] = [];
         const newPlateMap = new Map(newPlate.processedData.map(p => [`${p.x},${p.y}`, {...p, plateId: newPlate.id}]));
         for (let y = 0; y < newPlate.stats.gridSize.height; y++) {
             newPlateGrid[y] = [];
             for (let x = 0; x < newPlate.stats.gridSize.width; x++) {
                 const point = newPlateMap.get(`${x},${y}`);
-                newPlateGrid[y][x] = {
-                  plateId: point ? newPlate.id : null,
-                  rawThickness: point?.rawThickness ?? null,
-                  effectiveThickness: point?.effectiveThickness ?? null,
-                  percentage: point?.percentage ?? null,
-                  x,
-                  y
-                };
-            }
-        }
-
-        let newMergedGrid: MergedInspectionResult['mergedGrid'] = [];
-
-        if (mergeDirection === 'bottom') {
-            newMergedGrid = [...oldGrid];
-            for (let y = 0; y < newPlate.stats.gridSize.height; y++) {
-                const newRow: MergedInspectionResult['mergedGrid'][0] = [];
-                for (let x = 0; x < Math.max(oldWidth, newPlate.stats.gridSize.width); x++) {
-                    const point = newPlateGrid[y]?.[x];
-                    newRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
-                }
-                newMergedGrid.push(newRow);
-            }
-        } else if (mergeDirection === 'top') {
-             for (let y = 0; y < newPlate.stats.gridSize.height; y++) {
-                const newRow: MergedInspectionResult['mergedGrid'][0] = [];
-                for (let x = 0; x < Math.max(oldWidth, newPlate.stats.gridSize.width); x++) {
-                    const point = newPlateGrid[y]?.[x];
-                    newRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
-                }
-                newMergedGrid.push(newRow);
-            }
-            newMergedGrid.push(...oldGrid);
-        } else if (mergeDirection === 'right') {
-            const newHeight = Math.max(oldHeight, newPlate.stats.gridSize.height);
-            for (let y = 0; y < newHeight; y++) {
-                const oldRow = oldGrid[y] || [];
-                const newPlateRow = newPlateGrid[y] || [];
-                const mergedRow: MergedInspectionResult['mergedGrid'][0] = [...oldRow];
-                 while (mergedRow.length < oldWidth) {
-                  mergedRow.push({ plateId: null, rawThickness: null, effectiveThickness: null, percentage: null });
-                }
-                for(let x=0; x < newPlate.stats.gridSize.width; x++) {
-                    const point = newPlateRow[x];
-                    mergedRow[oldWidth + x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
-                }
-                newMergedGrid.push(mergedRow);
-            }
-        } else if (mergeDirection === 'left') {
-            const newHeight = Math.max(oldHeight, newPlate.stats.gridSize.height);
-             for (let y = 0; y < newHeight; y++) {
-                const oldRow = oldGrid[y] || [];
-                const newPlateRow = newPlateGrid[y] || [];
-                const mergedRow: MergedInspectionResult['mergedGrid'][0] = [];
-                 for(let x=0; x < newPlate.stats.gridSize.width; x++) {
-                    const point = newPlateRow[x];
-                    mergedRow[x] = point || { plateId: null, rawThickness: null, effectiveThickness: null, percentage: null };
-                }
-                // Pad with empty cells if new plate is narrower
-                while (mergedRow.length < newPlate.stats.gridSize.width) {
-                  mergedRow.push({ plateId: null, rawThickness: null, effectiveThickness: null, percentage: null });
-                }
-                mergedRow.push(...oldRow);
-                newMergedGrid.push(mergedRow);
+                newPlateGrid[y][x] = point ? {
+                  plateId: newPlate.id,
+                  rawThickness: point.rawThickness,
+                  effectiveThickness: point.effectiveThickness,
+                  percentage: point.percentage
+                } : emptyCell;
             }
         }
         
-        // Ensure all rows have the same length
-        const maxWidth = Math.max(...newMergedGrid.map(row => row.length));
+        let newMergedGrid: MergedGrid = [];
+
+        if (direction === 'bottom') {
+            const gap = start - oldHeight;
+            newMergedGrid = [...oldGrid.map(row => [...row])]; // Deep copy
+            // Add gap rows
+            for (let i = 0; i < gap; i++) {
+                newMergedGrid.push(Array(oldWidth).fill(ndGapCell));
+            }
+            // Add new plate rows
+            newMergedGrid.push(...newPlateGrid);
+        } else if (direction === 'top') {
+            const gap = start; // For 'top', start is the gap
+            // Add gap rows
+            for (let i = 0; i < gap; i++) {
+                newMergedGrid.push(Array(oldWidth).fill(ndGapCell));
+            }
+             // Add new plate rows
+            newMergedGrid.push(...newPlateGrid);
+            // Add old grid rows
+            newMergedGrid.push(...oldGrid.map(row => [...row]));
+        } else if (direction === 'right') {
+            const gap = start - oldWidth;
+            newMergedGrid = oldGrid.map(row => [...row]); // Deep copy
+            newMergedGrid.forEach(row => {
+                for (let i = 0; i < gap; i++) {
+                    row.push(ndGapCell);
+                }
+            });
+            // Merge in new plate
+            for (let y = 0; y < newPlateGrid.length; y++) {
+                if (!newMergedGrid[y]) newMergedGrid[y] = [];
+                newMergedGrid[y].push(...newPlateGrid[y]);
+            }
+        } else if (direction === 'left') {
+            const gap = start; // For 'left', start is the gap
+            newMergedGrid = oldGrid.map(row => [...row]); // Deep copy
+            
+            // Prepend gap and new plate
+            for (let y = 0; y < Math.max(newPlateGrid.length, newMergedGrid.length); y++) {
+                const newRow = newPlateGrid[y] || [];
+                const gapCols = Array(gap).fill(ndGapCell);
+                const oldRow = newMergedGrid[y] || [];
+                
+                newMergedGrid[y] = [...newRow, ...gapCols, ...oldRow];
+            }
+        }
+
+        // Ensure all rows have the same length (ragged array normalization)
+        const maxWidth = Math.max(0, ...newMergedGrid.map(row => row.length));
         newMergedGrid.forEach(row => {
             while (row.length < maxWidth) {
-                row.push({ plateId: null, rawThickness: null, effectiveThickness: null, percentage: null });
+                row.push(emptyCell);
             }
         });
 

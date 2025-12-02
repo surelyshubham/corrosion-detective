@@ -31,7 +31,10 @@ export function MainApp() {
   const [activeTab, setActiveTab] = useState("setup")
 
   const handleFileProcess = useCallback(
-    async (file: File, assetType: AssetType, nominalThickness: number, mergeDirection: 'left' | 'right' | 'top' | 'bottom') => {
+    async (file: File, assetType: AssetType, nominalThickness: number, options: {
+      direction: 'left' | 'right' | 'top' | 'bottom';
+      start: number;
+    }) => {
       setIsLoading(true)
       try {
         const arrayBuffer = await file.arrayBuffer()
@@ -54,7 +57,7 @@ export function MainApp() {
           metadata,
         };
         
-        addPlate(newPlate, mergeDirection);
+        addPlate(newPlate, options);
         
         setActiveTab("info")
         toast({

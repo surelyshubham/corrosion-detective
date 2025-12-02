@@ -30,7 +30,7 @@ const getNormalizedColor = (normalizedPercent: number | null): string => {
 const ColorLegend = ({ mode, min, max, nominal }: { mode: ColorMode, min: number, max: number, nominal: number}) => {
     const renderMmLegend = () => {
         const levels = [
-            { label: `90-100%`, color: '#0000ff' },
+            { label: `> 90%`, color: '#0000ff' },
             { label: `80-90%`, color: '#00ff00' },
             { label: `70-80%`, color: '#ffff00' },
             { label: `< 70%`, color: '#ff0000' },
@@ -152,7 +152,7 @@ export function TwoDeeHeatmapTab() {
   // --- Drawing Logic ---
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!gridSize || !mergedGrid || !minThickness || !maxThickness) return;
+    if (!gridSize || !mergedGrid || minThickness === undefined || maxThickness === undefined) return;
     
     const canvasWidth = gridSize.width * scaledCellSize;
     const canvasHeight = gridSize.height * scaledCellSize;
@@ -177,6 +177,11 @@ export function TwoDeeHeatmapTab() {
         
         if (!point || point.effectiveThickness === null) {
           color = 'transparent';
+          if (point?.plateId === 'ND') {
+            // Optional: color ND gaps differently
+            ctx.fillStyle = "rgba(128, 128, 128, 0.1)"; // Light grey for ND gaps
+            ctx.fillRect(x * scaledCellSize, y * scaledCellSize, scaledCellSize, scaledCellSize);
+          }
         } else if (colorMode === '%') {
             const normalized = effTRange > 0
                 ? (point.effectiveThickness - minThickness) / effTRange
