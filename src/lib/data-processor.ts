@@ -160,7 +160,7 @@ export const reprocessMergedData = (
     for (let x = 0; x < width; x++) {
       const cell = grid[y][x];
       if (!cell || cell.effectiveThickness === null) {
-        if (cell.plateId) countND++;
+        if (cell && cell.plateId) countND++;
         continue;
       }
       
@@ -188,8 +188,10 @@ export const reprocessMergedData = (
   const avgThickness = validPointsCount > 0 ? sumThickness / validPointsCount : 0;
   const minPercentage = (minThickness / nominalThickness) * 100;
   
+  const finalMinThickness = minThickness === Infinity ? 0 : minThickness;
+
   const stats: InspectionStats = {
-    minThickness: minThickness === Infinity ? 0 : minThickness,
+    minThickness: finalMinThickness,
     maxThickness: maxThickness === -Infinity ? 0 : maxThickness,
     avgThickness,
     minPercentage: isFinite(minPercentage) ? minPercentage : 0,
@@ -198,7 +200,7 @@ export const reprocessMergedData = (
     areaBelow60: totalScannedPoints > 0 ? (areaBelow60 / totalScannedPoints) * 100 : 0,
     countND,
     totalPoints: height * width,
-    worstLocation,
+    worstLocation: finalMinThickness === 0 ? { x: 0, y: 0 } : worstLocation,
     gridSize: { width, height },
     scannedArea: totalScannedPoints / 1000000,
   };
