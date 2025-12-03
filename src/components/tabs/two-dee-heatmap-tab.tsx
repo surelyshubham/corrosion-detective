@@ -104,12 +104,12 @@ export function TwoDeeHeatmapTab() {
   const [zoom, setZoom] = useState(1);
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
-  const { mergedGrid, stats, nominalThickness, plates } = inspectionResult || {};
+  const { mergedGrid, stats, nominalThickness, plates, assetType } = inspectionResult || {};
   const { gridSize, minThickness, maxThickness } = stats || {};
   
   const BASE_CELL_SIZE = 6;
   const scaledCellSize = BASE_CELL_SIZE * zoom;
-  const AXIS_SIZE = 35; // Space for axis labels
+  const AXIS_SIZE = 45; // Space for axis labels
 
   const plateIds = useMemo(() => plates?.map(p => p.id), [plates]);
 
@@ -297,14 +297,26 @@ export function TwoDeeHeatmapTab() {
   const renderXAxis = () => {
     if (!gridSize) return null;
     const ticks = [];
-    const interval = getNiceInterval(gridSize.width, 10);
-    for (let i = 0; i <= gridSize.width; i += interval) {
-      ticks.push(
-        <div key={`x-${i}`} className="absolute top-0 text-center text-xs text-muted-foreground" style={{ left: `${i * scaledCellSize}px`, transform: 'translateX(-50%)' }}>
-          <div className="absolute top-1 w-px h-1 bg-muted-foreground" />
-          <span className="absolute top-2">{i}</span>
-        </div>
-      );
+    if (assetType === 'Pipe') {
+        const labels = [{val: 0, label: "0°"}, {val: 0.25, label: "90°"}, {val: 0.5, label: "180°"}, {val: 0.75, label: "270°"}, {val: 1, label: "360°"}];
+        labels.forEach(({val, label}) => {
+            ticks.push(
+                <div key={`x-${val}`} className="absolute top-0 text-center text-xs text-muted-foreground" style={{ left: `${val * gridSize.width * scaledCellSize}px`, transform: 'translateX(-50%)' }}>
+                  <div className="absolute top-1 w-px h-1 bg-muted-foreground" />
+                  <span className="absolute top-2">{label}</span>
+                </div>
+              );
+        });
+    } else {
+        const interval = getNiceInterval(gridSize.width, 10);
+        for (let i = 0; i <= gridSize.width; i += interval) {
+          ticks.push(
+            <div key={`x-${i}`} className="absolute top-0 text-center text-xs text-muted-foreground" style={{ left: `${i * scaledCellSize}px`, transform: 'translateX(-50%)' }}>
+              <div className="absolute top-1 w-px h-1 bg-muted-foreground" />
+              <span className="absolute top-2">{i}</span>
+            </div>
+          );
+        }
     }
     return <div style={{ width: gridSize.width * scaledCellSize }}>{ticks}</div>;
   };
@@ -332,13 +344,14 @@ export function TwoDeeHeatmapTab() {
     <div className="grid md:grid-cols-4 gap-6 h-full">
       <Card className="h-full flex flex-col md:col-span-3">
         <CardHeader>
-          <CardTitle className="font-headline">2D Heatmap</CardTitle>
+          <CardTitle className="font-headline">2D Heatmap{assetType === 'Pipe' ? ' (Unwrapped)' : ''}</CardTitle>
         </CardHeader>
         <CardContent className="flex-grow relative p-0 border-t flex flex-col">
             <div className="relative w-full h-full flex">
                 {/* Y Axis */}
                 <div className="flex-shrink-0" style={{ width: AXIS_SIZE }}>
-                    <div ref={yAxisRef} className="relative h-full">
+                    <div className='text-xs text-muted-foreground -rotate-90 whitespace-nowrap absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 origin-center'>{assetType === 'Pipe' ? 'Axial Position (mm)' : 'Y Coordinate (mm)'}</div>
+                    <div ref={yAxisRef} className="relative h-full pt-1">
                        {renderYAxis()}
                     </div>
                 </div>
@@ -346,7 +359,8 @@ export function TwoDeeHeatmapTab() {
                 <div className="flex-grow flex flex-col overflow-hidden">
                     {/* X Axis */}
                     <div className="flex-shrink-0" style={{ height: AXIS_SIZE }}>
-                       <div ref={xAxisRef} className="relative h-full">
+                       <div className='text-xs text-muted-foreground absolute bottom-0 left-1/2 -translate-x-1/2 pb-1'>{assetType === 'Pipe' ? 'Circumferential Angle' : 'X Coordinate (mm)'}</div>
+                       <div ref={xAxisRef} className="relative h-full pr-1">
                           {renderXAxis()}
                        </div>
                     </div>

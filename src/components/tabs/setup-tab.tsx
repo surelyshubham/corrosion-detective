@@ -21,6 +21,7 @@ interface SetupTabProps {
   onFileProcess: (file: File, assetType: AssetType, nominalThickness: number, options: {
     direction: 'left' | 'right' | 'top' | 'bottom';
     start: number;
+    pipeOuterDiameter?: number;
   }) => void
   isLoading: boolean
 }
@@ -28,6 +29,7 @@ interface SetupTabProps {
 const setupSchema = z.object({
   assetType: z.enum(assetTypes, { required_error: 'Asset type is required.' }),
   nominalThickness: z.coerce.number().min(0.1, 'Must be positive.'),
+  pipeOuterDiameter: z.coerce.number().min(1, 'Must be positive.').optional(),
 })
 
 type SetupFormValues = z.infer<typeof setupSchema>
@@ -53,6 +55,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
     defaultValues: {
       nominalThickness: inspectionResult?.nominalThickness || 6,
       assetType: inspectionResult?.assetType,
+      pipeOuterDiameter: inspectionResult?.pipeOuterDiameter || 1000,
     },
   })
   
@@ -69,6 +72,9 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
     if (inspectionResult) {
       setValue('assetType', inspectionResult.assetType);
       setValue('nominalThickness', inspectionResult.nominalThickness);
+      if(inspectionResult.pipeOuterDiameter) {
+        setValue('pipeOuterDiameter', inspectionResult.pipeOuterDiameter);
+      }
     }
   }, [inspectionResult, setValue]);
 
@@ -108,7 +114,11 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
         return;
     }
     const data = getValues();
-    onFileProcess(file, data.assetType, Number(data.nominalThickness), { direction: 'right', start: 0 });
+    onFileProcess(file, data.assetType, Number(data.nominalThickness), { 
+      direction: 'right', 
+      start: 0, 
+      pipeOuterDiameter: data.pipeOuterDiameter 
+    });
     setFile(null); // Clear file after processing
   };
 
@@ -131,7 +141,8 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
     
     onFileProcess(file, setupData.assetType, Number(setupData.nominalThickness), {
       direction: mergeData.direction,
-      start: mergeData.start
+      start: mergeData.start,
+      pipeOuterDiameter: setupData.pipeOuterDiameter,
     });
     setFile(null);
     setIsMergeAlertOpen(false);
@@ -157,7 +168,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
           <CardDescription>Start by providing asset details and uploading C-scan data. Add multiple files to merge them.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="assetType">1. Select Asset Type</Label>
               <Controller
@@ -178,6 +189,20 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
               />
               {errors.assetType && <p className="text-sm text-destructive">{errors.assetType.message}</p>}
             </div>
+
+            {selectedAssetType === 'Pipe' && (
+              <div className="space-y-2">
+                <Label htmlFor="pipeOuterDiameter">Pipe Outer Diameter (mm)</Label>
+                 <Controller
+                  name="pipeOuterDiameter"
+                  control={control}
+                  render={({ field }) => (
+                    <Input id="pipeOuterDiameter" type="number" step="1" {...field} disabled={isLoading || !!inspectionResult} />
+                  )}
+                />
+                {errors.pipeOuterDiameter && <p className="text-sm text-destructive">{errors.pipeOuterDiameter.message}</p>}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>2. Upload Excel File (.xlsx)</Label>
@@ -222,25 +247,26 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
               {errors.nominalThickness && <p className="text-sm text-destructive">{errors.nominalThickness.message}</p>}
             </div>
 
-            <Button onClick={handleSubmit(onSubmit)} className="w-full" disabled={!file || !selectedAssetType || isLoading}>
+            <Button type="submit" className="w-full" disabled={!file || !selectedAssetType || isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Processing...' : (inspectionResult ? 'Process & Merge File' : 'Process File')}
             </Button>
+          </form>
 
-            {inspectionResult && (
-                <Card className="bg-muted/50">
-                    <CardHeader className="p-4">
-                        <CardTitle className="text-base">Plates Loaded: {inspectionResult.plates.length}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0 text-sm">
-                        <ul className="list-disc pl-5">
-                            {inspectionResult.plates.map(p => <li key={p.id} className="truncate">{p.fileName}</li>)}
-                        </ul>
-                         <Button variant="link" className="p-0 h-auto mt-2" onClick={() => { setInspectionResult(null); mergeForm.reset(); }}>Clear all plates</Button>
-                    </CardContent>
-                </Card>
-            )}
-          </div>
+          {inspectionResult && (
+              <Card className="bg-muted/50 mt-6">
+                  <CardHeader className="p-4">
+                      <CardTitle className="text-base">Plates Loaded: {inspectionResult.plates.length}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0 text-sm">
+                      <ul className="list-disc pl-5">
+                          {inspectionResult.plates.map(p => <li key={p.id} className="truncate">{p.fileName}</li>)}
+                      </ul>
+                       <Button variant="link" className="p-0 h-auto mt-2" onClick={() => { setInspectionResult(null); mergeForm.reset(); }}>Clear all plates</Button>
+                  </CardContent>
+              </Card>
+          )}
+
         </CardContent>
       </Card>
       

@@ -103,6 +103,7 @@ export const useInspectionStore = create<InspectionState>()(
             mergedGrid: grid,
             nominalThickness: newPlate.nominalThickness,
             assetType: newPlate.assetType,
+            pipeOuterDiameter: newPlate.pipeOuterDiameter,
             stats,
             condition,
             aiInsight: null,
@@ -196,9 +197,10 @@ export const useInspectionStore = create<InspectionState>()(
           mergedGrid: newMergedGrid,
           nominalThickness: newPlate.nominalThickness,
           assetType: newPlate.assetType,
+          pipeOuterDiameter: newPlate.pipeOuterDiameter,
+          aiInsight: null, // Reset AI insight after merge
           stats,
           condition,
-          aiInsight: null, // Reset AI insight after merge
         };
 
         set({ inspectionResult: newInspectionResult });

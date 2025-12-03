@@ -121,7 +121,7 @@ export function ThreeDeeViewTab() {
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshRef = useRef<THREE.Mesh | null>(null);
 
-  const { mergedGrid, stats, nominalThickness } = inspectionResult || {};
+  const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter } = inspectionResult || {};
 
   const VISUAL_WIDTH = 100;
 
@@ -129,11 +129,22 @@ export function ThreeDeeViewTab() {
     if (!stats || !mergedGrid) return null;
     const { gridSize } = stats;
     if (gridSize.width <= 1 || gridSize.height <= 1) return null;
-    const aspect = gridSize.height / gridSize.width;
-    const geom = new THREE.PlaneGeometry(VISUAL_WIDTH, VISUAL_WIDTH * aspect, gridSize.width - 1, gridSize.height - 1);
-    geom.rotateX(-Math.PI / 2); // Rotate to lie flat on XZ plane
-    return geom;
-  }, [stats, mergedGrid]);
+
+    if (assetType === 'Pipe' && pipeOuterDiameter) {
+        const pipeLength = 100;
+        return new THREE.CylinderGeometry(
+            pipeOuterDiameter / 2, pipeOuterDiameter / 2, 
+            pipeLength, 
+            gridSize.width -1, gridSize.height - 1, 
+            true
+        );
+    } else {
+        const aspect = gridSize.height / gridSize.width;
+        const geom = new THREE.PlaneGeometry(VISUAL_WIDTH, VISUAL_WIDTH * aspect, gridSize.width - 1, gridSize.height - 1);
+        geom.rotateX(-Math.PI / 2); // Rotate to lie flat on XZ plane
+        return geom;
+    }
+  }, [stats, mergedGrid, assetType, pipeOuterDiameter]);
 
 
   useEffect(() => {
@@ -144,33 +155,74 @@ export function ThreeDeeViewTab() {
     
     const colors: number[] = [];
     const positions = geometry.attributes.position;
+    const originalPositions = positions.clone();
 
-    let i = 0;
-    for (let y = 0; y < gridSize.height; y++) {
-        for (let x = 0; x < gridSize.width; x++, i++) {
-            const cellData = mergedGrid[y]?.[x];
+    if (assetType === 'Pipe' && pipeOuterDiameter) {
+        const pipeRadius = pipeOuterDiameter / 2;
+        const pipeLength = 100;
+        
+        for (let i = 0; i < positions.count; i++) {
+            const y_idx = Math.floor(i / gridSize.width);
+            const x_idx = i % gridSize.width;
+
+            const cellData = mergedGrid[y_idx]?.[x_idx];
+            const effectiveThickness = cellData?.effectiveThickness;
+            const percentage = cellData?.percentage;
+
+            const angle = (x_idx / (gridSize.width - 1)) * 2 * Math.PI;
+            const z = (y_idx / (gridSize.height - 1)) * pipeLength - pipeLength / 2;
             
-            // Y-position from EFFECTIVE thickness
-            if (cellData && cellData.effectiveThickness !== null) {
-                const normEff = effTRange > 0 ? (cellData.effectiveThickness - minThickness) / effTRange : 0;
-                positions.setY(i, normEff * zScale);
-            } else {
-                positions.setY(i, 0); 
+            let r = pipeRadius;
+            if (effectiveThickness !== null && effectiveThickness !== undefined) {
+                const loss = nominalThickness - effectiveThickness;
+                const radialOffset = loss * zScale; // exaggeration
+                r = pipeRadius - radialOffset;
             }
-            
-            // Color from EFFECTIVE thickness
+
+            positions.setX(i, r * Math.cos(angle));
+            positions.setY(i, r * Math.sin(angle));
+            positions.setZ(i, z);
+
             let color: THREE.Color;
             if (colorMode === '%') {
-                 const normalizedPercent = (cellData && cellData.effectiveThickness !== null && effTRange > 0)
-                    ? (cellData.effectiveThickness - minThickness) / effTRange
+                 const normalizedPercent = (effectiveThickness !== null && effectiveThickness !== undefined && effTRange > 0)
+                    ? (effectiveThickness - minThickness) / effTRange
                     : null;
                 color = getNormalizedColor(normalizedPercent);
             } else {
-                color = getAbsColor(cellData?.percentage ?? null);
+                color = getAbsColor(percentage ?? null);
             }
             colors.push(color.r, color.g, color.b);
         }
+    } else { // Plate logic
+        let i = 0;
+        for (let y = 0; y < gridSize.height; y++) {
+            for (let x = 0; x < gridSize.width; x++, i++) {
+                const cellData = mergedGrid[y]?.[x];
+                
+                // Y-position from EFFECTIVE thickness
+                if (cellData && cellData.effectiveThickness !== null) {
+                    const normEff = effTRange > 0 ? (cellData.effectiveThickness - minThickness) / effTRange : 0;
+                    positions.setY(i, normEff * zScale);
+                } else {
+                    positions.setY(i, 0); 
+                }
+                
+                // Color from EFFECTIVE thickness
+                let color: THREE.Color;
+                if (colorMode === '%') {
+                     const normalizedPercent = (cellData && cellData.effectiveThickness !== null && effTRange > 0)
+                        ? (cellData.effectiveThickness - minThickness) / effTRange
+                        : null;
+                    color = getNormalizedColor(normalizedPercent);
+                } else {
+                    color = getAbsColor(cellData?.percentage ?? null);
+                }
+                colors.push(color.r, color.g, color.b);
+            }
+        }
     }
+
 
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     positions.needsUpdate = true;
@@ -179,13 +231,13 @@ export function ThreeDeeViewTab() {
     
     meshRef.current.geometry = geometry;
 
-  }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid]);
+  }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid, assetType, pipeOuterDiameter]);
 
 
   useEffect(() => {
     if (!mountRef.current || !inspectionResult || !geometry) return
 
-    const { mergedGrid, stats, nominalThickness } = inspectionResult
+    const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter } = inspectionResult
     const { gridSize, minThickness, maxThickness } = stats
     
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -201,62 +253,67 @@ export function ThreeDeeViewTab() {
     const visualHeight = VISUAL_WIDTH * aspect;
 
     const camera = new THREE.PerspectiveCamera(60, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 2000)
-    camera.position.set(VISUAL_WIDTH * 0.7, VISUAL_WIDTH * 0.9, zScale * 2);
     cameraRef.current = camera
 
     const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 0, 0)
     controls.update()
     controlsRef.current = controls
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7))
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
-    dirLight.position.set(VISUAL_WIDTH, visualHeight*2, zScale * 3)
     scene.add(dirLight)
 
-    // AXES and GRIDS
-    const gridContainer = new THREE.Group();
-    const mainGrid = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444);
-    gridContainer.add(mainGrid);
+    if (assetType === 'Pipe' && pipeOuterDiameter) {
+        camera.position.set(pipeOuterDiameter * 1.2, pipeOuterDiameter * 0.5, pipeOuterDiameter * 1.2);
+        controls.target.set(0, 0, 0)
+        dirLight.position.set(50, 100, 50);
 
-    const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
-    axesHelper.position.set(-VISUAL_WIDTH/2, 0, -visualHeight/2);
-    gridContainer.add(axesHelper);
-    
-    // Add axis labels
-    const axisLabels = new THREE.Group();
-    const xLabel = createTextSprite("X", {fontsize: 32});
-    xLabel.position.set(VISUAL_WIDTH / 2 + 10, 0, -visualHeight / 2);
-    axisLabels.add(xLabel);
+    } else {
+        camera.position.set(VISUAL_WIDTH * 0.7, VISUAL_WIDTH * 0.9, zScale * 2);
+        controls.target.set(0, 0, 0)
+        dirLight.position.set(VISUAL_WIDTH, visualHeight*2, zScale * 3)
 
-    const yLabel = createTextSprite("Y", {fontsize: 32});
-    yLabel.position.set(-VISUAL_WIDTH / 2, 0, visualHeight / 2 + 10);
-    axisLabels.add(yLabel);
+        // AXES and GRIDS for Plate
+        const gridContainer = new THREE.Group();
+        const mainGrid = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444);
+        gridContainer.add(mainGrid);
 
-    const zLabel = createTextSprite("Z (Thickness)", {fontsize: 32});
-    zLabel.position.set(-VISUAL_WIDTH / 2, zScale > 0 ? zScale + 10 : 10, -visualHeight / 2);
-    axisLabels.add(zLabel);
-    
-    const tickLength = 2;
-    const numTicks = 5;
+        const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
+        axesHelper.position.set(-VISUAL_WIDTH/2, 0, -visualHeight/2);
+        gridContainer.add(axesHelper);
+        
+        const axisLabels = new THREE.Group();
+        const xLabel = createTextSprite("X", {fontsize: 32});
+        xLabel.position.set(VISUAL_WIDTH / 2 + 10, 0, -visualHeight / 2);
+        axisLabels.add(xLabel);
 
-    for (let i = 0; i <= numTicks; i++) {
-        const frac = i / numTicks;
-        // X-axis ticks
-        const xPos = (frac - 0.5) * VISUAL_WIDTH;
-        const xTickLabel = createTextSprite(`${Math.round(frac * gridSize.width)}`, { fontsize: 18 });
-        xTickLabel.position.set(xPos, 0, -visualHeight / 2 - tickLength - 5);
-        axisLabels.add(xTickLabel);
+        const yLabel = createTextSprite("Y", {fontsize: 32});
+        yLabel.position.set(-VISUAL_WIDTH / 2, 0, visualHeight / 2 + 10);
+        axisLabels.add(yLabel);
 
-        // Y-axis ticks (now Z in scene space)
-        const zPos = (frac - 0.5) * visualHeight;
-        const yTickLabel = createTextSprite(`${Math.round(frac * gridSize.height)}`, { fontsize: 18 });
-        yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, 0, zPos);
-        axisLabels.add(yTickLabel);
+        const zLabel = createTextSprite("Z (Thickness)", {fontsize: 32});
+        zLabel.position.set(-VISUAL_WIDTH / 2, zScale > 0 ? zScale + 10 : 10, -visualHeight / 2);
+        axisLabels.add(zLabel);
+        
+        const tickLength = 2;
+        const numTicks = 5;
+
+        for (let i = 0; i <= numTicks; i++) {
+            const frac = i / numTicks;
+            const xPos = (frac - 0.5) * VISUAL_WIDTH;
+            const xTickLabel = createTextSprite(`${Math.round(frac * gridSize.width)}`, { fontsize: 18 });
+            xTickLabel.position.set(xPos, 0, -visualHeight / 2 - tickLength - 5);
+            axisLabels.add(xTickLabel);
+
+            const zPos = (frac - 0.5) * visualHeight;
+            const yTickLabel = createTextSprite(`${Math.round(frac * gridSize.height)}`, { fontsize: 18 });
+            yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, 0, zPos);
+            axisLabels.add(yTickLabel);
+        }
+        
+        gridContainer.add(axisLabels);
+        scene.add(gridContainer);
     }
-    
-    gridContainer.add(axisLabels);
-    scene.add(gridContainer);
 
 
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -277,7 +334,7 @@ export function ThreeDeeViewTab() {
     
     let minMarker: THREE.Mesh | null = null;
     if(stats.worstLocation){
-        minMarker = new THREE.Mesh(new THREE.SphereGeometry(VISUAL_WIDTH/100, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        minMarker = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
         minMaxGroup.add(minMarker);
     }
     
@@ -299,14 +356,14 @@ export function ThreeDeeViewTab() {
                 break;
             }
         }
-        maxMarker = new THREE.Mesh(new THREE.SphereGeometry(VISUAL_WIDTH/100, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
+        maxMarker = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
         minMaxGroup.add(maxMarker);
     }
 
     minMaxGroup.visible = showMinMax;
     scene.add(minMaxGroup);
     
-    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(VISUAL_WIDTH/80, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
+    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(2.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
     selectedMarker.visible = false;
     scene.add(selectedMarker);
     
@@ -316,22 +373,24 @@ export function ThreeDeeViewTab() {
       
       const normNominal = effTRange > 0 ? (nominalThickness - stats.minThickness) / effTRange : 0;
       refPlane.position.y = normNominal * zScale;
-      refPlane.visible = showReference;
+      refPlane.visible = showReference && assetType !== 'Pipe';
 
-      if(minMarker && stats.worstLocation){ 
-          const pointData = mergedGrid[stats.worstLocation.y]?.[stats.worstLocation.x];
-          if (pointData && pointData.effectiveThickness !== null) {
-            const normMinY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
-            minMarker.position.set( (stats.worstLocation.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMinY * zScale, (stats.worstLocation.y / gridSize.height - 0.5) * visualHeight);
+      if (assetType !== 'Pipe') {
+          if(minMarker && stats.worstLocation){ 
+              const pointData = mergedGrid[stats.worstLocation.y]?.[stats.worstLocation.x];
+              if (pointData && pointData.effectiveThickness !== null) {
+                const normMinY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
+                minMarker.position.set( (stats.worstLocation.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMinY * zScale, (stats.worstLocation.y / gridSize.height - 0.5) * visualHeight);
+              }
           }
+          if(maxMarker && maxPoint && maxPoint.effectiveThickness !== null){ 
+              const normMaxY = effTRange > 0 ? (maxPoint.effectiveThickness - stats.minThickness) / effTRange : 0;
+              maxMarker.position.set( (maxPointCoords.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMaxY * zScale, (maxPointCoords.y / gridSize.height - 0.5) * visualHeight);
+           }
       }
-      if(maxMarker && maxPoint && maxPoint.effectiveThickness !== null){ 
-          const normMaxY = effTRange > 0 ? (maxPoint.effectiveThickness - stats.minThickness) / effTRange : 0;
-          maxMarker.position.set( (maxPointCoords.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMaxY * zScale, (maxPointCoords.y / gridSize.height - 0.5) * visualHeight);
-       }
-      minMaxGroup.visible = showMinMax;
+      minMaxGroup.visible = showMinMax && assetType !== 'Pipe';
 
-      if (selectedPoint) {
+      if (selectedPoint && assetType !== 'Pipe') {
           const pointData = mergedGrid[selectedPoint.y]?.[selectedPoint.x];
           if (pointData && pointData.effectiveThickness !== null) {
               const normY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
@@ -361,7 +420,7 @@ export function ThreeDeeViewTab() {
     const mouse = new THREE.Vector2();
 
     const onMouseMove = (event: MouseEvent) => {
-        if (!mountRef.current || !meshRef.current) return;
+        if (!mountRef.current || !meshRef.current || assetType === 'Pipe') return; // Hover disabled for pipe for now
         const rect = mountRef.current.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -407,7 +466,7 @@ export function ThreeDeeViewTab() {
     };
     
     const onClick = (event: MouseEvent) => {
-        if(hoveredPoint){
+        if(hoveredPoint && assetType !== 'Pipe'){
             setSelectedPoint({ x: hoveredPoint.x, y: hoveredPoint.y });
         }
     };
@@ -428,10 +487,15 @@ export function ThreeDeeViewTab() {
   
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
-        const { gridSize } = inspectionResult.stats;
-        const aspect = gridSize.height / gridSize.width;
-        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * aspect * 0.7 );
-        controlsRef.current.target.set(0, 0, 0);
+        const { gridSize, assetType, pipeOuterDiameter } = inspectionResult;
+        if (assetType === 'Pipe' && pipeOuterDiameter) {
+            cameraRef.current.position.set(pipeOuterDiameter * 1.2, pipeOuterDiameter * 0.5, pipeOuterDiameter * 1.2);
+            controlsRef.current.target.set(0, 0, 0);
+        } else {
+            const aspect = gridSize.height / gridSize.width;
+            cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * aspect * 0.7 );
+            controlsRef.current.target.set(0, 0, 0);
+        }
         controlsRef.current.update();
     }
   }
@@ -439,15 +503,16 @@ export function ThreeDeeViewTab() {
   const setView = (view: 'top' | 'side' | 'front') => {
     if (cameraRef.current && controlsRef.current) {
         controlsRef.current.target.set(0, 0, 0);
+        const distance = assetType === 'Pipe' && pipeOuterDiameter ? pipeOuterDiameter * 1.5 : VISUAL_WIDTH;
         switch (view) {
             case 'top':
-                cameraRef.current.position.set(0, VISUAL_WIDTH, 0);
+                cameraRef.current.position.set(0, distance, 0);
                 break;
             case 'side':
-                cameraRef.current.position.set(VISUAL_WIDTH, 5, 0);
+                cameraRef.current.position.set(distance, 0, 0);
                 break;
             case 'front':
-                cameraRef.current.position.set(0, 5, VISUAL_WIDTH);
+                cameraRef.current.position.set(0, 0, distance);
                 break;
         }
         controlsRef.current.update();
@@ -466,7 +531,7 @@ export function ThreeDeeViewTab() {
             <div ref={mountRef} className="w-full h-full" />
           </CardContent>
         </Card>
-        {hoveredPoint && (
+        {hoveredPoint && assetType !== 'Pipe' && (
           <div
             className="absolute p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border"
             style={{
@@ -502,17 +567,21 @@ export function ThreeDeeViewTab() {
                 </RadioGroup>
             </div>
             <div className="space-y-3">
-              <Label>Z-Axis Scale: {zScale.toFixed(1)}x</Label>
+              <Label>Z-Axis Scale / Radial Exaggeration: {zScale.toFixed(1)}x</Label>
               <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={1} max={50} step={0.5} />
             </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="ref-plane-switch" className="flex items-center gap-2"><Expand className="h-4 w-4" />Show Reference Plane</Label>
-              <Switch id="ref-plane-switch" checked={showReference} onCheckedChange={setShowReference} />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="min-max-switch" className="flex items-center gap-2"><Pin className="h-4 w-4" />Show Min/Max Points</Label>
-              <Switch id="min-max-switch" checked={showMinMax} onCheckedChange={setShowMinMax} />
-            </div>
+            {assetType !== 'Pipe' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="ref-plane-switch" className="flex items-center gap-2"><Expand className="h-4 w-4" />Show Reference Plane</Label>
+                  <Switch id="ref-plane-switch" checked={showReference} onCheckedChange={setShowReference} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="min-max-switch" className="flex items-center gap-2"><Pin className="h-4 w-4" />Show Min/Max Points</Label>
+                  <Switch id="min-max-switch" checked={showMinMax} onCheckedChange={setShowMinMax} />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>

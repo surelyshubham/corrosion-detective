@@ -58,6 +58,7 @@ export type Plate = {
   metadata: any[][];
   assetType: AssetType;
   nominalThickness: number;
+  pipeOuterDiameter?: number;
 };
 
 export interface MergedCell {
@@ -74,6 +75,7 @@ export interface MergedInspectionResult {
   mergedGrid: MergedGrid;
   nominalThickness: number;
   assetType: AssetType;
+  pipeOuterDiameter?: number;
   // Global stats are calculated from the merged grid
   stats: InspectionStats; 
   condition: Condition;

@@ -34,6 +34,7 @@ export function MainApp() {
     async (file: File, assetType: AssetType, nominalThickness: number, options: {
       direction: 'left' | 'right' | 'top' | 'bottom';
       start: number;
+      pipeOuterDiameter?: number;
     }) => {
       setIsLoading(true)
       try {
@@ -52,6 +53,7 @@ export function MainApp() {
           fileName: file.name,
           assetType,
           nominalThickness,
+          pipeOuterDiameter: options.pipeOuterDiameter,
           processedData,
           stats,
           metadata,
