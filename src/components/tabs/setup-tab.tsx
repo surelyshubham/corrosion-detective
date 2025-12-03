@@ -22,6 +22,7 @@ interface SetupTabProps {
     direction: 'left' | 'right' | 'top' | 'bottom';
     start: number;
     pipeOuterDiameter?: number;
+    pipeLength?: number;
   }) => void
   isLoading: boolean
 }
@@ -30,6 +31,7 @@ const setupSchema = z.object({
   assetType: z.enum(assetTypes, { required_error: 'Asset type is required.' }),
   nominalThickness: z.coerce.number().min(0.1, 'Must be positive.'),
   pipeOuterDiameter: z.coerce.number().min(1, 'Must be positive.').optional(),
+  pipeLength: z.coerce.number().min(1, 'Must be positive.').optional(),
 })
 
 type SetupFormValues = z.infer<typeof setupSchema>
@@ -56,6 +58,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       nominalThickness: inspectionResult?.nominalThickness || 6,
       assetType: inspectionResult?.assetType,
       pipeOuterDiameter: inspectionResult?.pipeOuterDiameter || 1000,
+      pipeLength: inspectionResult?.pipeLength || 1000,
     },
   })
   
@@ -74,6 +77,9 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       setValue('nominalThickness', inspectionResult.nominalThickness);
       if(inspectionResult.pipeOuterDiameter) {
         setValue('pipeOuterDiameter', inspectionResult.pipeOuterDiameter);
+      }
+      if(inspectionResult.pipeLength) {
+        setValue('pipeLength', inspectionResult.pipeLength);
       }
     }
   }, [inspectionResult, setValue]);
@@ -117,7 +123,8 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
     onFileProcess(file, data.assetType, Number(data.nominalThickness), { 
       direction: 'right', 
       start: 0, 
-      pipeOuterDiameter: data.pipeOuterDiameter 
+      pipeOuterDiameter: data.pipeOuterDiameter,
+      pipeLength: data.pipeLength,
     });
     setFile(null); // Clear file after processing
   };
@@ -143,6 +150,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       direction: mergeData.direction,
       start: mergeData.start,
       pipeOuterDiameter: setupData.pipeOuterDiameter,
+      pipeLength: setupData.pipeLength,
     });
     setFile(null);
     setIsMergeAlertOpen(false);
@@ -191,16 +199,29 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
             </div>
 
             {selectedAssetType === 'Pipe' && (
-              <div className="space-y-2">
-                <Label htmlFor="pipeOuterDiameter">Pipe Outer Diameter (mm)</Label>
-                 <Controller
-                  name="pipeOuterDiameter"
-                  control={control}
-                  render={({ field }) => (
-                    <Input id="pipeOuterDiameter" type="number" step="1" {...field} disabled={isLoading || !!inspectionResult} />
-                  )}
-                />
-                {errors.pipeOuterDiameter && <p className="text-sm text-destructive">{errors.pipeOuterDiameter.message}</p>}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pipeOuterDiameter">Pipe Outer Diameter (mm)</Label>
+                  <Controller
+                    name="pipeOuterDiameter"
+                    control={control}
+                    render={({ field }) => (
+                      <Input id="pipeOuterDiameter" type="number" step="1" {...field} disabled={isLoading || !!inspectionResult} />
+                    )}
+                  />
+                  {errors.pipeOuterDiameter && <p className="text-sm text-destructive col-span-2">{errors.pipeOuterDiameter.message}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pipeLength">Pipe Length (mm)</Label>
+                  <Controller
+                    name="pipeLength"
+                    control={control}
+                    render={({ field }) => (
+                      <Input id="pipeLength" type="number" step="1" {...field} disabled={isLoading || !!inspectionResult} />
+                    )}
+                  />
+                  {errors.pipeLength && <p className="text-sm text-destructive col-span-2">{errors.pipeLength.message}</p>}
+                </div>
               </div>
             )}
 

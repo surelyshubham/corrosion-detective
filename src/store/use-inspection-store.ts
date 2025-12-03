@@ -104,6 +104,7 @@ export const useInspectionStore = create<InspectionState>()(
             nominalThickness: newPlate.nominalThickness,
             assetType: newPlate.assetType,
             pipeOuterDiameter: newPlate.pipeOuterDiameter,
+            pipeLength: newPlate.pipeLength,
             stats,
             condition,
             aiInsight: null,
@@ -198,6 +199,7 @@ export const useInspectionStore = create<InspectionState>()(
           nominalThickness: newPlate.nominalThickness,
           assetType: newPlate.assetType,
           pipeOuterDiameter: newPlate.pipeOuterDiameter,
+          pipeLength: newPlate.pipeLength,
           aiInsight: null, // Reset AI insight after merge
           stats,
           condition,

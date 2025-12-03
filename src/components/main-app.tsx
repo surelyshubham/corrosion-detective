@@ -35,6 +35,7 @@ export function MainApp() {
       direction: 'left' | 'right' | 'top' | 'bottom';
       start: number;
       pipeOuterDiameter?: number;
+      pipeLength?: number;
     }) => {
       setIsLoading(true)
       try {
@@ -54,6 +55,7 @@ export function MainApp() {
           assetType,
           nominalThickness,
           pipeOuterDiameter: options.pipeOuterDiameter,
+          pipeLength: options.pipeLength,
           processedData,
           stats,
           metadata,

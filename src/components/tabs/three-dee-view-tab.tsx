@@ -121,7 +121,7 @@ export function ThreeDeeViewTab() {
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshRef = useRef<THREE.Mesh | null>(null);
 
-  const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter } = inspectionResult || {};
+  const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter, pipeLength } = inspectionResult || {};
 
   const VISUAL_WIDTH = 100;
 
@@ -131,11 +131,11 @@ export function ThreeDeeViewTab() {
     if (gridSize.width <= 1 || gridSize.height <= 1) return null;
 
     if (assetType === 'Pipe' && pipeOuterDiameter) {
-        const pipeLength = 100;
+        const length = pipeLength || 100; // default length
         return new THREE.CylinderGeometry(
             pipeOuterDiameter / 2, pipeOuterDiameter / 2, 
-            pipeLength, 
-            gridSize.width -1, gridSize.height - 1, 
+            length, 
+            gridSize.width - 1, gridSize.height - 1, 
             true
         );
     } else {
@@ -144,7 +144,7 @@ export function ThreeDeeViewTab() {
         geom.rotateX(-Math.PI / 2); // Rotate to lie flat on XZ plane
         return geom;
     }
-  }, [stats, mergedGrid, assetType, pipeOuterDiameter]);
+  }, [stats, mergedGrid, assetType, pipeOuterDiameter, pipeLength]);
 
 
   useEffect(() => {
@@ -155,11 +155,10 @@ export function ThreeDeeViewTab() {
     
     const colors: number[] = [];
     const positions = geometry.attributes.position;
-    const originalPositions = positions.clone();
-
+    
     if (assetType === 'Pipe' && pipeOuterDiameter) {
         const pipeRadius = pipeOuterDiameter / 2;
-        const pipeLength = 100;
+        const length = pipeLength || 100;
         
         for (let i = 0; i < positions.count; i++) {
             const y_idx = Math.floor(i / gridSize.width);
@@ -170,7 +169,7 @@ export function ThreeDeeViewTab() {
             const percentage = cellData?.percentage;
 
             const angle = (x_idx / (gridSize.width - 1)) * 2 * Math.PI;
-            const z = (y_idx / (gridSize.height - 1)) * pipeLength - pipeLength / 2;
+            const z = (y_idx / (gridSize.height - 1)) * length - length / 2;
             
             let r = pipeRadius;
             if (effectiveThickness !== null && effectiveThickness !== undefined) {
@@ -231,13 +230,13 @@ export function ThreeDeeViewTab() {
     
     meshRef.current.geometry = geometry;
 
-  }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid, assetType, pipeOuterDiameter]);
+  }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid, assetType, pipeOuterDiameter, pipeLength]);
 
 
   useEffect(() => {
     if (!mountRef.current || !inspectionResult || !geometry) return
 
-    const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter } = inspectionResult
+    const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter, pipeLength } = inspectionResult
     const { gridSize, minThickness, maxThickness } = stats
     
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -263,8 +262,9 @@ export function ThreeDeeViewTab() {
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
     scene.add(dirLight)
 
+    const length = pipeLength || 100;
     if (assetType === 'Pipe' && pipeOuterDiameter) {
-        camera.position.set(pipeOuterDiameter * 1.2, pipeOuterDiameter * 0.5, pipeOuterDiameter * 1.2);
+        camera.position.set(pipeOuterDiameter * 0.7, length * 0.7, pipeOuterDiameter * 0.7);
         controls.target.set(0, 0, 0)
         dirLight.position.set(50, 100, 50);
 
@@ -420,7 +420,7 @@ export function ThreeDeeViewTab() {
     const mouse = new THREE.Vector2();
 
     const onMouseMove = (event: MouseEvent) => {
-        if (!mountRef.current || !meshRef.current || assetType === 'Pipe') return; // Hover disabled for pipe for now
+        if (!mountRef.current || !meshRef.current) return;
         const rect = mountRef.current.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -432,8 +432,8 @@ export function ThreeDeeViewTab() {
             const intersect = intersects[0];
             if (!intersect.face) return;
 
-            // This logic assumes a non-indexed BufferGeometry, which PlaneGeometry is.
-            // We check vertices a, b, and c of the intersected face.
+            // This logic assumes a non-indexed BufferGeometry.
+            // We check vertices a, b, and c of the intersected face to find the closest grid point.
             const indices = [intersect.face.a, intersect.face.b, intersect.face.c];
             let closestIndex = -1;
             let minDistance = Infinity;
@@ -466,7 +466,7 @@ export function ThreeDeeViewTab() {
     };
     
     const onClick = (event: MouseEvent) => {
-        if(hoveredPoint && assetType !== 'Pipe'){
+        if(hoveredPoint){
             setSelectedPoint({ x: hoveredPoint.x, y: hoveredPoint.y });
         }
     };
@@ -487,9 +487,11 @@ export function ThreeDeeViewTab() {
   
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
-        const { gridSize, assetType, pipeOuterDiameter } = inspectionResult;
+        const { gridSize, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+        const length = pipeLength || 100;
+
         if (assetType === 'Pipe' && pipeOuterDiameter) {
-            cameraRef.current.position.set(pipeOuterDiameter * 1.2, pipeOuterDiameter * 0.5, pipeOuterDiameter * 1.2);
+            cameraRef.current.position.set(pipeOuterDiameter * 0.7, length * 0.7, pipeOuterDiameter * 0.7);
             controlsRef.current.target.set(0, 0, 0);
         } else {
             const aspect = gridSize.height / gridSize.width;
@@ -531,7 +533,7 @@ export function ThreeDeeViewTab() {
             <div ref={mountRef} className="w-full h-full" />
           </CardContent>
         </Card>
-        {hoveredPoint && assetType !== 'Pipe' && (
+        {hoveredPoint && (
           <div
             className="absolute p-2 text-xs rounded-md shadow-lg pointer-events-none bg-popover text-popover-foreground border"
             style={{
