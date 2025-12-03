@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Camera, Expand, Minimize, Pin, Redo, RefreshCw, Percent, Ruler } from 'lucide-react'
+import { Camera, Expand, Minimize, Pin, Redo, RefreshCw, Percent, Ruler, LocateFixed } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 
 const getAbsColor = (percentage: number | null): THREE.Color => {
@@ -114,6 +114,7 @@ export function ThreeDeeViewTab() {
   const [zScale, setZScale] = useState(15)
   const [showReference, setShowReference] = useState(false)
   const [showMinMax, setShowMinMax] = useState(true)
+  const [showOrigin, setShowOrigin] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState<any>(null)
   
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -330,6 +331,10 @@ export function ThreeDeeViewTab() {
     
     const effTRange = stats.maxThickness - stats.minThickness;
 
+    // --- Origin (0,0) Marker ---
+    const originMarker = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshBasicMaterial({ color: 0xff00ff })); // Magenta cube
+    scene.add(originMarker);
+
     const minMaxGroup = new THREE.Group();
     
     let minMarker: THREE.Mesh | null = null;
@@ -375,6 +380,28 @@ export function ThreeDeeViewTab() {
       refPlane.position.y = normNominal * zScale;
       refPlane.visible = showReference && assetType !== 'Pipe';
 
+      originMarker.visible = showOrigin;
+      if (showOrigin) {
+        const originData = mergedGrid[0]?.[0];
+        if (assetType === 'Pipe' && pipeOuterDiameter) {
+            const pipeRadius = pipeOuterDiameter / 2;
+            let r = pipeRadius;
+            if (originData && originData.effectiveThickness !== null) {
+                const loss = nominalThickness - originData.effectiveThickness;
+                r = pipeRadius - (loss * zScale);
+            }
+            originMarker.position.set(r, 0, -length / 2);
+        } else { // Plate
+            let yPos = 0;
+            if (originData && originData.effectiveThickness !== null) {
+                const normY = effTRange > 0 ? (originData.effectiveThickness - minThickness) / effTRange : 0;
+                yPos = normY * zScale;
+            }
+            originMarker.position.set(-VISUAL_WIDTH / 2, yPos, -visualHeight / 2);
+        }
+      }
+
+
       if (assetType !== 'Pipe') {
           if(minMarker && stats.worstLocation){ 
               const pointData = mergedGrid[stats.worstLocation.y]?.[stats.worstLocation.x];
@@ -390,11 +417,21 @@ export function ThreeDeeViewTab() {
       }
       minMaxGroup.visible = showMinMax && assetType !== 'Pipe';
 
-      if (selectedPoint && assetType !== 'Pipe') {
+      if (selectedPoint) {
           const pointData = mergedGrid[selectedPoint.y]?.[selectedPoint.x];
           if (pointData && pointData.effectiveThickness !== null) {
-              const normY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
-              selectedMarker.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, normY * zScale, (selectedPoint.y / gridSize.height - 0.5) * visualHeight );
+              if (assetType === 'Pipe' && pipeOuterDiameter) {
+                  const pipeRadius = pipeOuterDiameter / 2;
+                  const angle = (selectedPoint.x / (gridSize.width - 1)) * 2 * Math.PI;
+                  const z = (selectedPoint.y / (gridSize.height - 1)) * length - length / 2;
+                  const loss = nominalThickness - pointData.effectiveThickness;
+                  const r = pipeRadius - (loss * zScale);
+                  selectedMarker.position.set(r * Math.cos(angle), r * Math.sin(angle), z);
+
+              } else { // Plate
+                  const normY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
+                  selectedMarker.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, normY * zScale, (selectedPoint.y / gridSize.height - 0.5) * visualHeight );
+              }
               selectedMarker.visible = true;
           } else {
               selectedMarker.visible = false;
@@ -584,6 +621,10 @@ export function ThreeDeeViewTab() {
                 </div>
               </>
             )}
+             <div className="flex items-center justify-between">
+              <Label htmlFor="origin-switch" className="flex items-center gap-2"><LocateFixed className="h-4 w-4" />Show Origin (0,0)</Label>
+              <Switch id="origin-switch" checked={showOrigin} onCheckedChange={setShowOrigin} />
+            </div>
           </CardContent>
         </Card>
         <Card>
