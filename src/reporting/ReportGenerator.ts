@@ -18,7 +18,8 @@ const THEME_PRIMARY = rgb(30 / 255, 144 / 255, 255 / 255); // dodgerblue
 const THEME_TEXT = rgb(0.1, 0.1, 0.1);
 const THEME_MUTED = rgb(0.5, 0.5, 0.5);
 
-async function drawHeader(page: any, width: number, data: ReportData) {
+async function drawHeader(page: any, data: ReportData) {
+    const { width } = page.getSize();
     // Placeholder for logo
     page.drawText(data.metadata.companyName || 'Company Name', {
         x: 50,
@@ -46,11 +47,11 @@ export async function generateInspectionReport(data: ReportData) {
   const pdfDoc = await PDFDocument.create();
   const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBoldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const { width, height } = PageSizes.A4;
-  let page = pdfDoc.addPage();
+  let page = pdfDoc.addPage(PageSizes.A4);
+  let { width, height } = page.getSize();
   
   // --- PAGE 1: HEADER & SUMMARY ---
-  await drawHeader(page, width, data);
+  await drawHeader(page, data);
   let y = height - 120;
 
   const summaryFields = [
@@ -88,8 +89,9 @@ export async function generateInspectionReport(data: ReportData) {
   }
 
   // --- PAGE 2: 3D OVERVIEW ---
-  page = pdfDoc.addPage();
-  await drawHeader(page, width, data);
+  page = pdfDoc.addPage(PageSizes.A4);
+  ({ width, height } = page.getSize());
+  await drawHeader(page, data);
   y = height - 120;
   
   page.drawText('3D Inspection Overview', { x: 50, y, font: helveticaBoldFont, size: 16 });
@@ -113,8 +115,9 @@ export async function generateInspectionReport(data: ReportData) {
 
   // --- PAGE 3: DEFECT TABLE ---
   if(data.defects.length > 0) {
-    page = pdfDoc.addPage();
-    await drawHeader(page, width, data);
+    page = pdfDoc.addPage(PageSizes.A4);
+    ({ width, height } = page.getSize());
+    await drawHeader(page, data);
     y = height - 120;
     
     page.drawText(`Defect Summary (Wall < 80%)`, { x: 50, y, font: helveticaBoldFont, size: 16 });
@@ -132,8 +135,9 @@ export async function generateInspectionReport(data: ReportData) {
     
     for (const defect of data.defects) {
         if (y < 80) { // Add new page if space runs out
-            page = pdfDoc.addPage();
-            await drawHeader(page, width, data);
+            page = pdfDoc.addPage(PageSizes.A4);
+            ({ width, height } = page.getSize());
+            await drawHeader(page, data);
             y = height - 120;
             
             // Redraw table headers on new page
@@ -164,8 +168,9 @@ export async function generateInspectionReport(data: ReportData) {
   // --- PAGE 4+: INDIVIDUAL DEFECTS ---
    for (const defect of data.defects.slice(0,10)) { // Limit defects for now to prevent huge PDFs
      if (y < 400) {
-        page = pdfDoc.addPage();
-        await drawHeader(page, width, data);
+        page = pdfDoc.addPage(PageSizes.A4);
+        ({ width, height } = page.getSize());
+        await drawHeader(page, data);
         y = height - 120;
      }
      
@@ -205,8 +210,9 @@ export async function generateInspectionReport(data: ReportData) {
 
 
   // --- FINAL PAGE: REMARKS ---
-  page = pdfDoc.addPage();
-  await drawHeader(page, width, data);
+  page = pdfDoc.addPage(PageSizes.A4);
+  ({ width, height } = page.getSize());
+  await drawHeader(page, data);
   y = height - 120;
 
   page.drawText('Remarks', { x: 50, y, font: helveticaBoldFont, size: 16 });
