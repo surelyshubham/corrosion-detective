@@ -142,7 +142,7 @@ export function MainApp() {
           />
         </TabsContent>
         <TabsContent value="info" className="h-full">
-          {isDataLoaded ? <InfoTab /> : <DataPlaceholder />}
+          {isDataLoaded ? <InfoTab setActiveTab={setActiveTab} /> : <DataPlaceholder />}
         </TabsContent>
         <TabsContent value="3d-view" className="h-full">
           {isDataLoaded ? <ThreeDeeViewTab /> : <DataPlaceholder />}

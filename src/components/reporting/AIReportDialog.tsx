@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useState, useEffect } from 'react'
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { useReportStore } from '@/store/use-report-store'
 import { useToast } from '@/hooks/use-toast'
+import type { ReportMetadata } from '@/lib/types'
 
 const reportSchema = z.object({
   companyName: z.string().optional(),
@@ -34,11 +36,12 @@ type ReportFormValues = z.infer<typeof reportSchema>
 interface AIReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSubmit: (metadata: ReportMetadata) => void;
 }
 
-export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
+export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
-  const { setReportMetadata, reportMetadata } = useReportStore()
+  const { reportMetadata } = useReportStore()
   const { toast } = useToast()
   
   const defaultScanDate = React.useMemo(() => {
@@ -89,7 +92,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
         operatorName: data.operatorName || 'N/A',
         remarks: data.remarks || 'N/A',
     };
-    setReportMetadata(finalMetadata);
+    onSubmitProp(finalMetadata);
     toast({
       title: "Report Details Saved",
       description: "You can now generate the final report.",

@@ -1,3 +1,4 @@
+
 "use client"
 
 import React from 'react'
@@ -67,13 +68,16 @@ const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
   );
 };
 
+interface InfoTabProps {
+  setActiveTab: (tab: string) => void;
+}
 
-export function InfoTab() {
+export function InfoTab({ setActiveTab }: InfoTabProps) {
   const { inspectionResult } = useInspectionStore();
   const { toast } = useToast();
   
   const {
-    isReady: is3dViewReady,
+    is3dViewReady,
     captureFunctions,
     isGeneratingScreenshots,
     setIsGeneratingScreenshots,
@@ -81,6 +85,7 @@ export function InfoTab() {
     detailsSubmitted,
     setScreenshotData,
     resetReportState,
+    setReportMetadata,
     overviewScreenshot,
     patchScreenshots,
     patches,
@@ -97,15 +102,20 @@ export function InfoTab() {
   }, [inspectionResult, resetReportState]);
 
   const handleGenerateScreenshots = async () => {
-    if (!inspectionResult || !captureFunctions?.capture || !is3dViewReady) {
+    if (!inspectionResult) return;
+
+    if (!is3dViewReady || !captureFunctions?.capture) {
       toast({
         variant: "destructive",
-        title: "Cannot Generate Screenshots",
-        description: "The 3D view is not ready or data is missing.",
+        title: "3D Engine Not Ready",
+        description: "Please wait a moment for the 3D view to initialize, then try again.",
       });
       return;
     }
+    
     setIsGeneratingScreenshots(true);
+    setActiveTab("3d-view");
+    await new Promise(resolve => setTimeout(resolve, 600)); // Wait for tab switch and render
 
     try {
       // 1. Identify defect patches
@@ -123,6 +133,7 @@ export function InfoTab() {
             description: "Failed to capture the main overview screenshot. Please try again.",
          });
          setIsGeneratingScreenshots(false);
+         setActiveTab("info");
          return;
       }
 
@@ -160,6 +171,7 @@ export function InfoTab() {
       });
     } finally {
         setIsGeneratingScreenshots(false);
+        setActiveTab("info");
     }
   };
   
@@ -175,7 +187,10 @@ export function InfoTab() {
       setIsGeneratingFinalReport(true);
       try {
         // 1. Generate AI summaries
-        const overallSummary = await generateReportSummary(inspectionResult, patches);
+        const overallSummary = patches.length === 0
+            ? "No critical corrosion areas detected below 20% remaining wall thickness."
+            : await generateReportSummary(inspectionResult, patches);
+
         const patchSummaries: Record<string, string> = {};
         for (const patch of patches) {
              patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
@@ -390,7 +405,7 @@ export function InfoTab() {
         </div>
       </div>
     </ScrollArea>
-    {isReportDialogOpen && <AIReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} />}
+    {isReportDialogOpen && <AIReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} onSubmit={setReportMetadata} />}
     </>
   )
 }
