@@ -362,7 +362,8 @@ export function PlateView3D() {
     const mouse = new THREE.Vector2();
 
     const onMouseMove = (event: MouseEvent) => {
-        if (!currentMount || !meshRef.current || !cameraRef.current || !geometry) return;
+        if (!currentMount || !meshRef.current || !cameraRef.current || !geometry || !mergedGrid) return;
+        
         const rect = currentMount.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -372,10 +373,11 @@ export function PlateView3D() {
         
         if (intersects.length > 0) {
             const intersect = intersects[0];
-            if (!intersect.face) return;
+            if (!intersect.face) { setHoveredPoint(null); return; };
 
+            // Find the closest vertex of the intersected face
             const indices = [intersect.face.a, intersect.face.b, intersect.face.c];
-            let closestIndex = -1;
+            let closestVertexIndex = -1;
             let minDistance = Infinity;
 
             indices.forEach(index => {
@@ -383,17 +385,19 @@ export function PlateView3D() {
                 const distance = intersect.point.distanceTo(vertex);
                 if (distance < minDistance) {
                     minDistance = distance;
-                    closestIndex = index;
+                    closestVertexIndex = index;
                 }
             });
 
-            if (closestIndex !== -1 && mergedGrid) {
-                const x = closestIndex % inspectionResult.stats.gridSize.width;
-                const y = Math.floor(closestIndex / inspectionResult.stats.gridSize.width);
-                const cellData = mergedGrid[y]?.[x];
+            if (closestVertexIndex !== -1) {
+                const cols = inspectionResult.stats.gridSize.width;
+                const row = Math.floor(closestVertexIndex / cols);
+                const col = closestVertexIndex % cols;
 
+                const cellData = mergedGrid[row]?.[col];
                 if (cellData) {
-                    setHoveredPoint({ x: x, y: y, ...cellData, clientX: event.clientX, clientY: event.clientY });
+                    const wallLoss = cellData.effectiveThickness !== null ? nominalThickness! - cellData.effectiveThickness : null;
+                    setHoveredPoint({ x: col, y: row, ...cellData, wallLoss, clientX: event.clientX, clientY: event.clientY });
                 } else {
                     setHoveredPoint(null);
                 }
@@ -420,10 +424,9 @@ export function PlateView3D() {
       currentMount.removeEventListener('click', onClick);
       if (rendererRef.current) {
         rendererRef.current.dispose();
-        // currentMount.innerHTML = '';
       }
     };
-  }, [inspectionResult, geometry, setSelectedPoint]);
+  }, [inspectionResult, geometry, setSelectedPoint, nominalThickness]);
   
   useEffect(() => {
     // This effect ensures the animation loop continues with updated state
@@ -485,6 +488,7 @@ export function PlateView3D() {
             <div className="font-bold">X: {hoveredPoint.x}, Y: {hoveredPoint.y}</div>
             {hoveredPoint.plateId && <div className="text-muted-foreground">{hoveredPoint.plateId}</div>}
             <div>Eff. Thick: {hoveredPoint.effectiveThickness?.toFixed(2) ?? 'ND'} mm</div>
+            <div>Wall Loss: {hoveredPoint.wallLoss?.toFixed(2) ?? 'N/A'} mm</div>
             <div>Percentage: {hoveredPoint.percentage?.toFixed(1) ?? 'N/A'}%</div>
           </div>
         )}
@@ -546,3 +550,5 @@ export function PlateView3D() {
     </div>
   )
 }
+
+    
