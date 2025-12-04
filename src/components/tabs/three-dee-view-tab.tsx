@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
@@ -358,7 +359,8 @@ export function ThreeDeeViewTab() {
 
     sceneRef.current = new THREE.Scene();
     
-    const { gridSize, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+    const { stats, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+    const { gridSize } = stats;
     const aspect = gridSize.height / gridSize.width;
     const visualHeight = VISUAL_WIDTH * aspect;
 
@@ -505,7 +507,8 @@ export function ThreeDeeViewTab() {
 
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
-        const { gridSize, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+        const { stats, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+        const { gridSize } = stats;
         const length = pipeLength || 100;
 
         if (assetType === 'Pipe' && pipeOuterDiameter) {
