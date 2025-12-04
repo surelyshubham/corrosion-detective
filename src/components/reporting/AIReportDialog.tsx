@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -16,9 +16,6 @@ import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { useReportStore } from '@/store/use-report-store'
-import { generateAIReport, type AIReportData } from '@/reporting/AIReportGenerator'
-import { generateReportSummary } from '@/ai/flows/generate-report-summary'
-import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import { useToast } from '@/hooks/use-toast'
 
 const reportSchema = z.object({
@@ -41,8 +38,7 @@ interface AIReportDialogProps {
 
 export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
-  const { patches, overviewScreenshot, patchScreenshots } = useReportStore()
-  const [isGenerating, setIsGenerating] = useState(false)
+  const { setReportMetadata, reportMetadata } = useReportStore()
   const { toast } = useToast()
   
   const defaultScanDate = React.useMemo(() => {
@@ -52,89 +48,53 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
 
     // Handle Excel's numeric date format
     if (typeof dateMeta[1] === 'number') {
-        // Excel's epoch starts on 1900-01-01, but it incorrectly thinks 1900 is a leap year.
-        // The adjustment is to subtract 1 day for dates after 1900-02-28.
-        // Javascript's epoch is 1970-01-01. The difference is 25569 days.
-        return new Date((dateMeta[1] - 25569) * 86400 * 1000);
+        const jsDate = new Date((dateMeta[1] - 25569) * 86400 * 1000);
+        // Check if the date is valid before returning
+        return isNaN(jsDate.getTime()) ? undefined : jsDate;
     }
     
-    // Handle string dates (and try to be robust)
+    // Handle string dates
     const dateString = String(dateMeta[1]);
-    if (dateString.length < 6) return undefined;
-    
     const parsedDate = new Date(dateString);
-    if (!isNaN(parsedDate.getTime())) {
-      return parsedDate;
-    }
-
-    return undefined;
+    return isNaN(parsedDate.getTime()) ? undefined : parsedDate;
   }, [inspectionResult]);
 
-  const { control, handleSubmit, register } = useForm<ReportFormValues>({
+  const { control, handleSubmit, register, reset } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
-    defaultValues: {
-      reportDate: new Date(),
-      scanDate: defaultScanDate,
-      assetName: inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', ') || 'N/A',
-      projectName: inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('project'))?.[1] || 'N/A'
-    },
-  })
+  });
 
-  const onSubmit = async (data: ReportFormValues) => {
-    if (!inspectionResult || !overviewScreenshot) {
-      toast({
-        variant: "destructive",
-        title: "Report Generation Error",
-        description: "Screenshots not generated – capture view before exporting report.",
-      });
-      return;
-    }
-    setIsGenerating(true)
+  useEffect(() => {
+    // Populate form with stored metadata or default values
+    const defaultValues = {
+      reportDate: reportMetadata?.reportDate || new Date(),
+      scanDate: reportMetadata?.scanDate || defaultScanDate,
+      assetName: reportMetadata?.assetName || inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', ') || 'N/A',
+      projectName: reportMetadata?.projectName || inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('project'))?.[1] || 'N/A',
+      companyName: reportMetadata?.companyName || '',
+      area: reportMetadata?.area || '',
+      operatorName: reportMetadata?.operatorName || '',
+      remarks: reportMetadata?.remarks || '',
+    };
+    reset(defaultValues);
+  }, [inspectionResult, reportMetadata, defaultScanDate, reset, open]);
 
-    try {
-        // 1. Generate AI summaries
-        const overallSummary = await generateReportSummary(inspectionResult, patches);
-        const patchSummaries: Record<string, string> = {};
-        for (const patch of patches) {
-             patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
-        }
 
-        // 2. Assemble report data
-        const reportData: AIReportData = {
-            metadata: {
-              ...data,
-              companyName: data.companyName || 'N/A',
-              projectName: data.projectName || 'N/A',
-              assetName: data.assetName || 'N/A',
-              area: data.area || 'N/A',
-              operatorName: data.operatorName || 'N/A',
-              remarks: data.remarks || 'N/A',
-            },
-            inspection: inspectionResult,
-            patches,
-            screenshots: {
-                overview: overviewScreenshot,
-                patches: patchScreenshots,
-            },
-            summaries: {
-                overall: overallSummary,
-                patches: patchSummaries,
-            }
-        };
-
-        // 3. Generate PDF
-        await generateAIReport(reportData);
-        onOpenChange(false);
-    } catch (error) {
-        console.error("Failed to generate AI report", error);
-        toast({
-          variant: "destructive",
-          title: "Report Generation Failed",
-          description: error instanceof Error ? error.message : "An unknown error occurred.",
-        });
-    } finally {
-        setIsGenerating(false)
-    }
+  const onSubmit = (data: ReportFormValues) => {
+    const finalMetadata = {
+        ...data,
+        companyName: data.companyName || 'N/A',
+        projectName: data.projectName || 'N/A',
+        assetName: data.assetName || 'N/A',
+        area: data.area || 'N/A',
+        operatorName: data.operatorName || 'N/A',
+        remarks: data.remarks || 'N/A',
+    };
+    setReportMetadata(finalMetadata);
+    toast({
+      title: "Report Details Saved",
+      description: "You can now generate the final report.",
+    });
+    onOpenChange(false);
   }
 
   return (
@@ -142,7 +102,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
       <DialogContent className="sm:max-w-[600px]">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle>Generate AI-Powered Report</DialogTitle>
+            <DialogTitle>Add/Edit Report Details</DialogTitle>
             <DialogDescription>
               Fill in the details for the report. Blank fields will be marked "N/A".
             </DialogDescription>
@@ -226,10 +186,9 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>Cancel</Button>
-            <Button type="submit" disabled={isGenerating}>
-              {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isGenerating ? 'Generating...' : 'Generate & Download'}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit">
+              Save Details
             </Button>
           </DialogFooter>
         </form>

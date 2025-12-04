@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2, Layers, FileText, Camera } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers, FileText, Camera, Pencil, Download } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
 import { Button } from '../ui/button'
@@ -14,6 +14,9 @@ import { AIReportDialog } from '../reporting/AIReportDialog'
 import { useReportStore } from '@/store/use-report-store'
 import { useToast } from '@/hooks/use-toast'
 import { identifyPatches } from '@/reporting/patch-detector'
+import { generateAIReport, AIReportData } from '@/reporting/AIReportGenerator'
+import { generateReportSummary } from '@/ai/flows/generate-report-summary'
+import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
@@ -75,11 +78,18 @@ export function InfoTab() {
     isGeneratingScreenshots,
     setIsGeneratingScreenshots,
     screenshotsReady,
+    detailsSubmitted,
     setScreenshotData,
-    resetReportState
+    resetReportState,
+    overviewScreenshot,
+    patchScreenshots,
+    patches,
+    reportMetadata,
   } = useReportStore();
   
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
+  const [isGeneratingFinalReport, setIsGeneratingFinalReport] = React.useState(false);
+
 
   React.useEffect(() => {
     // Reset report state if inspection data changes
@@ -99,7 +109,7 @@ export function InfoTab() {
 
     try {
       // 1. Identify defect patches
-      const patches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
+      const identifiedPatches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
       
       // 2. Capture overview screenshot
       if (captureFunctions.resetCamera) captureFunctions.resetCamera();
@@ -118,7 +128,7 @@ export function InfoTab() {
 
       // 3. Capture patch screenshots
       const patchScreenshots: Record<string, string> = {};
-      for (const patch of patches) {
+      for (const patch of identifiedPatches) {
         if (captureFunctions.focus) {
           captureFunctions.focus(patch.center.x, patch.center.y);
           await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera to move
@@ -133,12 +143,12 @@ export function InfoTab() {
       setScreenshotData({
         overview: overviewScreenshot,
         patches: patchScreenshots,
-        patchData: patches,
+        patchData: identifiedPatches,
       });
 
       toast({
         title: "Screenshots Generated",
-        description: `Captured ${patches.length + 1} images. You can now generate the report.`,
+        description: `Captured ${identifiedPatches.length + 1} images. You can now add report details.`,
       });
 
     } catch (error) {
@@ -151,6 +161,53 @@ export function InfoTab() {
     } finally {
         setIsGeneratingScreenshots(false);
     }
+  };
+
+  const handleGenerateFinalReport = async () => {
+      if (!inspectionResult || !screenshotsReady || !reportMetadata) {
+        toast({
+            variant: "destructive",
+            title: "Cannot Generate Report",
+            description: "Please ensure screenshots are generated and report details are submitted.",
+        });
+        return;
+      }
+      setIsGeneratingFinalReport(true);
+      try {
+        // 1. Generate AI summaries
+        const overallSummary = await generateReportSummary(inspectionResult, patches);
+        const patchSummaries: Record<string, string> = {};
+        for (const patch of patches) {
+             patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
+        }
+
+        // 2. Assemble report data
+        const reportData: AIReportData = {
+            metadata: reportMetadata,
+            inspection: inspectionResult,
+            patches,
+            screenshots: {
+                overview: overviewScreenshot!,
+                patches: patchScreenshots,
+            },
+            summaries: {
+                overall: overallSummary,
+                patches: patchSummaries,
+            }
+        };
+        // 3. Generate PDF
+        await generateAIReport(reportData);
+
+      } catch (error) {
+        console.error("Failed to generate final AI report", error);
+        toast({
+          variant: "destructive",
+          title: "Report Generation Failed",
+          description: error instanceof Error ? error.message : "An unknown error occurred.",
+        });
+      } finally {
+          setIsGeneratingFinalReport(false);
+      }
   };
 
 
@@ -278,26 +335,54 @@ export function InfoTab() {
               <CardHeader>
                 <CardTitle className="font-headline flex items-center gap-2">
                   <FileText className="text-primary"/>
-                  Reporting
+                  Reporting Workflow
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground font-bold">1</span>
+                  <p>Generate visual assets</p>
+                </div>
                 <Button 
                   className="w-full" 
                   onClick={handleGenerateScreenshots}
                   disabled={!is3dViewReady || isGeneratingScreenshots || screenshotsReady}
                 >
                   {isGeneratingScreenshots ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2" />}
-                  {isGeneratingScreenshots ? 'Generating...' : (screenshotsReady ? 'Screenshots Ready' : '1. Generate Screenshots')}
+                  {isGeneratingScreenshots ? 'Generating...' : (screenshotsReady ? 'Screenshots Ready' : 'Generate Screenshots')}
                 </Button>
 
-                <Button 
+                <Separator />
+                
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground font-bold">2</span>
+                  <p>Fill in report details</p>
+                </div>
+                 <Button 
                   className="w-full" 
                   onClick={() => setIsReportDialogOpen(true)}
                   disabled={!screenshotsReady}
+                  variant="outline"
                 >
-                  2. Generate Report
+                  <Pencil className="mr-2" />
+                  {detailsSubmitted ? 'Edit Report Details' : 'Add Report Details'}
                 </Button>
+
+                <Separator />
+
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground font-bold">3</span>
+                  <p>Create and download PDF</p>
+                </div>
+                <Button 
+                  className="w-full" 
+                  onClick={handleGenerateFinalReport}
+                  disabled={!screenshotsReady || !detailsSubmitted || isGeneratingFinalReport}
+                >
+                  {isGeneratingFinalReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2" />}
+                  {isGeneratingFinalReport ? 'Generating...' : 'Generate Final Report'}
+                </Button>
+
               </CardContent>
             </Card>
 
