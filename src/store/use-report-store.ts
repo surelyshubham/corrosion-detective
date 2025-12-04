@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import type { IdentifiedPatch } from '@/reporting/patch-detector';
 import type { ReportMetadata } from '@/lib/types';
@@ -20,6 +21,10 @@ interface ReportState {
     setView: (view: 'iso' | 'top' | 'side') => void;
     isReady: boolean 
   }) => void;
+  
+  // Step 0: Configuration
+  defectThreshold: number;
+  setDefectThreshold: (threshold: number) => void;
 
   // Step 1: Screenshot Generation
   isGeneratingScreenshots: boolean;
@@ -28,16 +33,16 @@ interface ReportState {
   globalScreenshots: { iso: string, top: string, side: string } | null;
   patchScreenshots: Record<string, { iso: string, top: string }>;
   patches: IdentifiedPatch[];
+  setPatches: (patches: IdentifiedPatch[]) => void;
   setScreenshotData: (data: { 
     global: { iso: string, top: string, side: string } | null; 
     patches: Record<string, { iso: string, top: string }>; 
-    patchData: IdentifiedPatch[] 
   }) => void;
 
   // Step 2: Metadata Submission
-  reportMetadata: ReportMetadata | null;
+  reportMetadata: Omit<ReportMetadata, 'defectThreshold'> | null;
   detailsSubmitted: boolean;
-  setReportMetadata: (metadata: ReportMetadata) => void;
+  setReportMetadata: (metadata: Omit<ReportMetadata, 'defectThreshold'>) => void;
 
   // Progress Tracking
   captureProgress: { current: number, total: number } | null;
@@ -50,6 +55,7 @@ interface ReportState {
 const initialState = {
   captureFunctions: null,
   is3dViewReady: false,
+  defectThreshold: 50,
   isGeneratingScreenshots: false,
   screenshotsReady: false,
   globalScreenshots: null,
@@ -72,11 +78,12 @@ export const useReportStore = create<ReportState>()(
       },
       is3dViewReady: functions.isReady 
     }),
+    setDefectThreshold: (threshold) => set({ defectThreshold: threshold }),
     setIsGeneratingScreenshots: (isGenerating) => set({ isGeneratingScreenshots: isGenerating }),
+    setPatches: (patches) => set({ patches }),
     setScreenshotData: (data) => set({
       globalScreenshots: data.global,
       patchScreenshots: data.patches,
-      patches: data.patchData,
       screenshotsReady: !!data.global,
       isGeneratingScreenshots: false,
     }),
@@ -85,6 +92,9 @@ export const useReportStore = create<ReportState>()(
         detailsSubmitted: true,
     }),
     setCaptureProgress: (progress) => set({ captureProgress: progress }),
-    resetReportState: () => set(initialState),
+    resetReportState: () => set((state) => ({ // Keep threshold on reset
+      ...initialState,
+      defectThreshold: state.defectThreshold 
+    })),
   })
 );

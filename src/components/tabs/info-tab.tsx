@@ -1,13 +1,13 @@
 
 "use client"
 
-import React from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2, Layers, FileText, Camera, Pencil, Download, CheckCircle } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers, FileText, Camera, Pencil, Download, CheckCircle, Info } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
 import { Button } from '../ui/button'
@@ -19,6 +19,9 @@ import { generateAIReport, AIReportData } from '@/reporting/AIReportGenerator'
 import { generateReportSummary } from '@/ai/flows/generate-report-summary'
 import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import { Progress } from '../ui/progress'
+import { Slider } from '../ui/slider'
+import { Label } from '../ui/label'
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '../ui/tooltip'
 
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
@@ -81,24 +84,35 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
     screenshotsReady,
     setScreenshotData,
     resetReportState,
-    setReportMetadata,
     reportMetadata,
+    setReportMetadata,
     detailsSubmitted,
     patches,
+    setPatches,
     globalScreenshots,
     patchScreenshots,
     captureProgress,
     setCaptureProgress,
+    defectThreshold,
+    setDefectThreshold,
   } = useReportStore();
   
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
   const [isGeneratingFinalReport, setIsGeneratingFinalReport] = React.useState(false);
 
-
-  React.useEffect(() => {
+  useEffect(() => {
     // Reset report state if inspection data changes
     resetReportState();
   }, [inspectionResult, resetReportState]);
+
+  // Live patch detection when slider changes
+  useEffect(() => {
+    if (inspectionResult) {
+      const detected = identifyPatches(inspectionResult.mergedGrid, defectThreshold);
+      setPatches(detected);
+    }
+  }, [defectThreshold, inspectionResult, setPatches]);
+
 
   const handleGenerateScreenshots = async () => {
     if (!inspectionResult || !is3dViewReady || !captureFunctions?.capture || !captureFunctions.setView || !captureFunctions.focus) {
@@ -111,24 +125,24 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
     }
     
     setIsGeneratingScreenshots(true);
+    setCaptureProgress({ current: 0, total: 1 }); // Initial progress
 
     try {
-      const defectThreshold = reportMetadata?.defectThreshold || 20;
-      // 1. Identify defect patches
-      const identifiedPatches = identifyPatches(inspectionResult.mergedGrid, defectThreshold);
+      // The patches are already identified by the useEffect, just read them from the store.
+      const identifiedPatches = patches; 
       const totalImages = 3 + (identifiedPatches.length * 2);
       setCaptureProgress({ current: 0, total: totalImages });
       
       const capturedGlobalScreenshots: any = {};
       const capturedPatchScreenshots: Record<string, any> = {};
       
-      // Small delay to ensure the hidden 3D scene is fully rendered
+      // Small delay to ensure the hidden 3D scene is responsive
       await new Promise(resolve => setTimeout(resolve, 500));
 
       // 2. Capture Global Views
       const globalViews: ('iso' | 'top' | 'side')[] = ['iso', 'top', 'side'];
       for (const view of globalViews) {
-        setCaptureProgress({ current: Object.keys(capturedGlobalScreenshots).length + 1, total: totalImages });
+        setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
         captureFunctions.setView(view);
         await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera move and re-render
         const screenshot = captureFunctions.capture();
@@ -141,31 +155,35 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
 
       // 3. Capture patch screenshots
       for (const patch of identifiedPatches) {
-        setCaptureProgress({ current: Object.keys(capturedGlobalScreenshots).length + 1 + (Object.keys(capturedPatchScreenshots).length * 2), total: totalImages });
         // Focus on the patch
         captureFunctions.focus(patch.center.x, patch.center.y, true); // Zoom in
         
         // Capture Iso view of patch
+        setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
+        captureFunctions.setView('iso'); // ensure iso view
         await new Promise(resolve => setTimeout(resolve, 500));
         const isoScreenshot = captureFunctions.capture();
         
         // Capture Top view of patch
+        setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
         captureFunctions.setView('top');
         await new Promise(resolve => setTimeout(resolve, 500));
         const topScreenshot = captureFunctions.capture();
-        captureFunctions.setView('iso'); // Reset to iso for next capture
+        
+        // Reset camera after patch capture
+        captureFunctions.resetCamera();
 
         if (isoScreenshot && topScreenshot) {
           capturedPatchScreenshots[patch.id] = { iso: isoScreenshot, top: topScreenshot };
         }
-        setCaptureProgress({ current: Object.keys(capturedGlobalScreenshots).length + 1 + (Object.keys(capturedPatchScreenshots).length * 2) + 1, total: totalImages });
       }
+      
+      captureFunctions.resetCamera();
 
       // 4. Store results in state
       setScreenshotData({
         global: capturedGlobalScreenshots,
         patches: capturedPatchScreenshots,
-        patchData: identifiedPatches,
       });
 
       toast({
@@ -188,7 +206,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
   };
   
   const handleGenerateFinalReport = async () => {
-      if (!inspectionResult || !screenshotsReady || !reportMetadata || !globalScreenshots) {
+      if (!inspectionResult || !screenshotsReady || !reportMetadata) {
         toast({
             variant: "destructive",
             title: "Cannot Generate Report",
@@ -199,31 +217,31 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
       setIsGeneratingFinalReport(true);
       try {
         // 1. Generate AI summaries
-        const overallSummary = await generateReportSummary(inspectionResult, patches, reportMetadata.defectThreshold);
+        const overallSummary = await generateReportSummary(inspectionResult, patches, defectThreshold);
 
         const patchSummaries: Record<string, string> = {};
         for (const patch of patches) {
-            patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType, reportMetadata.defectThreshold);
+            patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType, defectThreshold);
         }
         
         if (patches.length === 0 && !overallSummary) {
           toast({
             title: "No Critical Defects Found",
-            description: `Generating a report indicating no issues below the ${reportMetadata.defectThreshold}% threshold.`,
+            description: `Generating a report indicating no issues below the ${defectThreshold}% threshold.`,
           });
         }
 
         // 2. Assemble report data
         const reportData: AIReportData = {
-            metadata: reportMetadata,
+            metadata: { ...reportMetadata, defectThreshold },
             inspection: inspectionResult,
             patches,
             screenshots: {
-                global: globalScreenshots,
+                global: globalScreenshots!,
                 patches: patchScreenshots,
             },
             summaries: {
-                overall: overallSummary || `No critical corrosion areas detected below ${reportMetadata.defectThreshold}% remaining wall thickness.`,
+                overall: overallSummary || `No critical corrosion areas detected below ${defectThreshold}% remaining wall thickness.`,
                 patches: patchSummaries,
             }
         };
@@ -371,6 +389,39 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
+
+                {/* --- DEFECT THRESHOLD SLIDER --- */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                     <Label htmlFor="defectThreshold">Defect Threshold: {defectThreshold}%</Label>
+                     <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p className="max-w-xs">Areas with wall thickness below this % will be marked as defects.</p>
+                            </TooltipContent>
+                        </Tooltip>
+                     </TooltipProvider>
+                  </div>
+                  <Slider
+                    id="defectThreshold"
+                    min={10}
+                    max={90}
+                    step={5}
+                    value={[defectThreshold]}
+                    onValueChange={(value) => setDefectThreshold(value[0])}
+                    disabled={isGeneratingScreenshots || screenshotsReady}
+                  />
+                  <p className="text-xs text-center text-muted-foreground pt-1">
+                    Detected Patches: <span className="font-bold text-foreground">{patches.length}</span>
+                  </p>
+                </div>
+
+                <Separator />
+
+
                 {/* --- STEP 1 --- */}
                 <div className="flex items-center gap-3">
                   <span className={`flex items-center justify-center w-6 h-6 rounded-full font-bold ${screenshotsReady ? 'bg-green-500' : 'bg-primary'} text-primary-foreground`}>

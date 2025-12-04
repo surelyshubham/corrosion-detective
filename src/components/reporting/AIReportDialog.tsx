@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -12,9 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import { Slider } from '@/components/ui/slider'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Calendar as CalendarIcon, Info } from 'lucide-react'
+import { Calendar as CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
@@ -31,7 +29,6 @@ const reportSchema = z.object({
   area: z.string().optional(),
   operatorName: z.string().optional(),
   remarks: z.string().optional(),
-  defectThreshold: z.number().min(10).max(90),
 })
 
 type ReportFormValues = z.infer<typeof reportSchema>
@@ -43,7 +40,7 @@ interface AIReportDialogProps {
 
 export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
-  const { reportMetadata, setReportMetadata } = useReportStore()
+  const { reportMetadata, setReportMetadata, defectThreshold } = useReportStore()
   const { toast } = useToast()
   
   const defaultScanDate = React.useMemo(() => {
@@ -61,18 +58,12 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
     return isNaN(parsedDate.getTime()) ? undefined : parsedDate;
   }, [inspectionResult]);
 
-  const { control, handleSubmit, register, reset, watch } = useForm<ReportFormValues>({
+  const { control, handleSubmit, register, reset } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
-    defaultValues: {
-      defectThreshold: 50,
-    }
   });
 
-  const defectThresholdValue = watch('defectThreshold');
-
-
   useEffect(() => {
-    const defaultValues = {
+    const defaultValues: ReportFormValues = {
       reportDate: reportMetadata?.reportDate || new Date(),
       scanDate: reportMetadata?.scanDate || defaultScanDate,
       assetName: reportMetadata?.assetName || inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', ') || 'N/A',
@@ -81,7 +72,6 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
       area: reportMetadata?.area || '',
       operatorName: reportMetadata?.operatorName || '',
       remarks: reportMetadata?.remarks || '',
-      defectThreshold: reportMetadata?.defectThreshold || 50,
     };
     reset(defaultValues);
   }, [inspectionResult, reportMetadata, defaultScanDate, reset, open]);
@@ -96,7 +86,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
         area: data.area || 'N/A',
         operatorName: data.operatorName || 'N/A',
         remarks: data.remarks || 'N/A',
-        defectThreshold: data.defectThreshold,
+        defectThreshold: defectThreshold,
     };
     setReportMetadata(finalMetadata);
     toast({
@@ -184,35 +174,6 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
                         )}
                     />
                 </div>
-            </div>
-             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                 <Label htmlFor="defectThreshold">Defect Detection Threshold: {defectThresholdValue}%</Label>
-                 <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p className="max-w-xs">Any area with thickness below this percentage of nominal will be treated as a Defect Patch and included in the report.</p>
-                        </TooltipContent>
-                    </Tooltip>
-                 </TooltipProvider>
-              </div>
-              <Controller
-                name="defectThreshold"
-                control={control}
-                render={({ field }) => (
-                  <Slider
-                    id="defectThreshold"
-                    min={10}
-                    max={90}
-                    step={5}
-                    value={[field.value]}
-                    onValueChange={(value) => field.onChange(value[0])}
-                  />
-                )}
-              />
             </div>
             <div className="space-y-2">
                 <Label htmlFor="operatorName">Operator Name</Label>
