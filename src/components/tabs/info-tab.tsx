@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2, Layers, FileText, Camera, Pencil, Download, CheckCircle, XCircle } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers, FileText, Camera, Pencil, Download, CheckCircle } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
 import { Button } from '../ui/button'
@@ -113,8 +113,9 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
     setIsGeneratingScreenshots(true);
 
     try {
+      const defectThreshold = reportMetadata?.defectThreshold || 20;
       // 1. Identify defect patches
-      const identifiedPatches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
+      const identifiedPatches = identifyPatches(inspectionResult.mergedGrid, defectThreshold);
       const totalImages = 3 + (identifiedPatches.length * 2);
       setCaptureProgress({ current: 0, total: totalImages });
       
@@ -140,6 +141,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
 
       // 3. Capture patch screenshots
       for (const patch of identifiedPatches) {
+        setCaptureProgress({ current: Object.keys(capturedGlobalScreenshots).length + 1 + (Object.keys(capturedPatchScreenshots).length * 2), total: totalImages });
         // Focus on the patch
         captureFunctions.focus(patch.center.x, patch.center.y, true); // Zoom in
         
@@ -151,11 +153,12 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
         captureFunctions.setView('top');
         await new Promise(resolve => setTimeout(resolve, 500));
         const topScreenshot = captureFunctions.capture();
+        captureFunctions.setView('iso'); // Reset to iso for next capture
 
         if (isoScreenshot && topScreenshot) {
           capturedPatchScreenshots[patch.id] = { iso: isoScreenshot, top: topScreenshot };
         }
-        setCaptureProgress({ current: 3 + (Object.keys(capturedPatchScreenshots).length * 2), total: totalImages });
+        setCaptureProgress({ current: Object.keys(capturedGlobalScreenshots).length + 1 + (Object.keys(capturedPatchScreenshots).length * 2) + 1, total: totalImages });
       }
 
       // 4. Store results in state
@@ -196,17 +199,17 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
       setIsGeneratingFinalReport(true);
       try {
         // 1. Generate AI summaries
-        const overallSummary = await generateReportSummary(inspectionResult, patches);
+        const overallSummary = await generateReportSummary(inspectionResult, patches, reportMetadata.defectThreshold);
 
         const patchSummaries: Record<string, string> = {};
         for (const patch of patches) {
-            patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
+            patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType, reportMetadata.defectThreshold);
         }
         
         if (patches.length === 0 && !overallSummary) {
           toast({
             title: "No Critical Defects Found",
-            description: "Generating a report indicating no major issues.",
+            description: `Generating a report indicating no issues below the ${reportMetadata.defectThreshold}% threshold.`,
           });
         }
 
@@ -220,7 +223,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
                 patches: patchScreenshots,
             },
             summaries: {
-                overall: overallSummary || "No critical corrosion areas detected below 20% remaining wall thickness.",
+                overall: overallSummary || `No critical corrosion areas detected below ${reportMetadata.defectThreshold}% remaining wall thickness.`,
                 patches: patchSummaries,
             }
         };
@@ -434,7 +437,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
         </div>
       </div>
     </ScrollArea>
-    {isReportDialogOpen && <AIReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} onSubmit={setReportMetadata} />}
+    {<AIReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} />}
     </>
   )
 }

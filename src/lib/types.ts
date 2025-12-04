@@ -99,6 +99,7 @@ export interface ReportMetadata {
   area?: string;
   operatorName?: string;
   remarks?: string;
+  defectThreshold: number;
 }
 
 export interface Defect {

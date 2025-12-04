@@ -87,7 +87,7 @@ function drawSectionHeader(page: any, y: number, title: string) {
 
 function drawField(page: any, y: number, label: string, value: string) {
     page.drawText(label, { x: 60, y, font: helveticaBoldFont, size: 10, color: THEME_MUTED });
-    page.drawText(value, { x: 180, y, font: helveticaFont, size: 10, color: THEME_TEXT });
+    page.drawText(value, { x: 200, y, font: helveticaFont, size: 10, color: THEME_TEXT });
     return y - 20;
 }
 
@@ -96,10 +96,10 @@ export async function generateAIReport(data: AIReportData) {
   const pdfDoc = await PDFDocument.create();
   helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   helveticaBoldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  let page = pdfDoc.addPage(PageSizes.A4);
-  let { width, height } = page.getSize();
   
   // --- PAGE 1: HEADER & SUMMARY ---
+  let page = pdfDoc.addPage(PageSizes.A4);
+  let { width, height } = page.getSize();
   await drawHeader(page, data);
   let y = height - 100;
 
@@ -115,7 +115,7 @@ export async function generateAIReport(data: AIReportData) {
   
   y = drawField(page, y, 'Nominal Thickness:', `${data.inspection.nominalThickness.toFixed(2)} mm`);
   y = drawField(page, y, 'Minimum Thickness:', `${data.inspection.stats.minThickness.toFixed(2)} mm (${data.inspection.stats.minPercentage.toFixed(1)}%)`);
-  y = drawField(page, y, 'Defect Patches (<20%):', `${data.patches.length}`);
+  y = drawField(page, y, `Defect Patches (<${data.metadata.defectThreshold}%):`, `${data.patches.length}`);
   y -= 10;
   
   // AI Summary
@@ -126,40 +126,45 @@ export async function generateAIReport(data: AIReportData) {
   }
   y -= 15;
 
-  // Global Screenshots
-  y = drawSectionHeader(page, y, 'Asset Views');
+  // --- GLOBAL SCREENSHOTS (on separate pages) ---
   if (data.screenshots.global) {
     const { iso, top, side } = data.screenshots.global;
-    const images = [
-        iso ? await pdfDoc.embedPng(iso) : null,
-        top ? await pdfDoc.embedPng(top) : null,
-        side ? await pdfDoc.embedPng(side) : null,
-    ].filter(img => img !== null);
+    const views = [
+        { title: 'Asset Isometric View', imgData: iso },
+        { title: 'Asset Top View (Plan)', imgData: top },
+        { title: 'Asset Side View (Elevation)', imgData: side },
+    ];
     
-    const imgWidth = (width - 120) / 3;
-    const imgY = y - 120;
-
-    images.forEach((img, index) => {
-        if(img) {
-            const dims = img.scaleToFit(imgWidth, 110);
-            page.drawImage(img, {
-                x: 50 + index * (imgWidth + 10),
-                y: imgY + (110 - dims.height) / 2,
+    for (const view of views) {
+        if (view.imgData) {
+            page = pdfDoc.addPage(PageSizes.A4);
+            ({ width, height } = page.getSize());
+            await drawHeader(page, data);
+            y = height - 100;
+            y = drawSectionHeader(page, y, view.title);
+            
+            const image = await pdfDoc.embedPng(view.imgData);
+            const dims = image.scaleToFit(width - 100, height - 200);
+            
+            page.drawImage(image, {
+                x: (width - dims.width) / 2,
+                y: y - dims.height,
                 width: dims.width,
                 height: dims.height,
             });
         }
-    });
+    }
   }
 
-  // --- PAGE 2: DEFECT TABLE ---
+
+  // --- DEFECT TABLE PAGE ---
   if(data.patches.length > 0) {
     page = pdfDoc.addPage(PageSizes.A4);
     ({ width, height } = page.getSize());
     await drawHeader(page, data);
     y = height - 100;
     
-    y = drawSectionHeader(page, y, `Critical Defect Patch Summary (<20% Remaining Wall)`);
+    y = drawSectionHeader(page, y, `Defect Patch Summary (<${data.metadata.defectThreshold}% Remaining Wall)`);
 
     const tableHeaders = ['Patch ID', 'Min Thk (mm)', 'Avg Thk (mm)', '% Rem.', 'Loss', 'X Range', 'Y Range', 'Area'];
     const colWidths = [50, 70, 70, 50, 50, 80, 80, 60];
@@ -209,7 +214,7 @@ export async function generateAIReport(data: AIReportData) {
     };
   }
 
-  // --- PAGE 3+: INDIVIDUAL PATCHES ---
+  // --- INDIVIDUAL PATCH PAGES ---
    for (const patch of data.patches) {
      page = pdfDoc.addPage(PageSizes.A4);
      ({ width, height } = page.getSize());

@@ -16,13 +16,14 @@ const ReportSummaryInputSchema = z.object({
   scannedArea: z.string(),
   patchCount: z.number(),
   overallCondition: z.string(),
+  defectThreshold: z.number(),
 });
 
 const ReportSummaryOutputSchema = z.object({
   summary: z.string().describe('A narrative summary for the report\'s first page. It should be a professional, high-level overview of the inspection findings.')
 });
 
-export async function generateReportSummary(inspection: MergedInspectionResult, patches: IdentifiedPatch[]): Promise<string> {
+export async function generateReportSummary(inspection: MergedInspectionResult, patches: IdentifiedPatch[], defectThreshold: number): Promise<string> {
   const input = {
       assetType: inspection.assetType,
       nominalThickness: inspection.nominalThickness,
@@ -31,6 +32,7 @@ export async function generateReportSummary(inspection: MergedInspectionResult, 
       scannedArea: inspection.stats.scannedArea.toFixed(2),
       patchCount: patches.length,
       overallCondition: inspection.condition,
+      defectThreshold,
   };
   const result = await reportSummaryFlow(input);
   return result.summary;
@@ -42,18 +44,18 @@ const prompt = ai.definePrompt({
   output: { schema: ReportSummaryOutputSchema },
   prompt: `You are an expert NDT analyst. Generate a professional, high-level narrative summary for the first page of an inspection report based on the provided data.
 
-Focus on the overall condition, the number of critical findings, and the most severe reading. Do not go into extreme detail on each patch, as that will be covered later.
+Focus on the overall condition, the number of critical findings based on the user's threshold, and the most severe reading. Do not go into extreme detail on each patch.
 
 Data:
 - Asset Type: {{assetType}}
 - Nominal Thickness: {{nominalThickness}}mm
 - Minimum Thickness Found: {{minThickness}}mm ({{minPercentage}}% of nominal)
 - Total Scanned Area: {{scannedArea}} m²
-- Number of Critical Defect Patches (<20%): {{patchCount}}
+- Number of Defect Patches (<{{defectThreshold}}%): {{patchCount}}
 - Overall Condition Assessment: {{overallCondition}}
 
 Generate a concise summary suitable for a customer report.
-Example: "The inspection of the {{assetType}} revealed a total of {{patchCount}} critical corrosion patches with wall thickness below 20% of nominal. The most severe finding was a measurement of {{minThickness}}mm. The overall condition is rated as {{overallCondition}}."
+Example: "The inspection of the {{assetType}} revealed a total of {{patchCount}} critical corrosion patches with wall thickness below {{defectThreshold}}% of nominal. The most severe finding was a measurement of {{minThickness}}mm. The overall condition is rated as {{overallCondition}}."
 `,
 });
 

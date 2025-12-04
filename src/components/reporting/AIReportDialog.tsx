@@ -12,7 +12,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import { Calendar as CalendarIcon, Loader2 } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Calendar as CalendarIcon, Info } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
@@ -29,6 +31,7 @@ const reportSchema = z.object({
   area: z.string().optional(),
   operatorName: z.string().optional(),
   remarks: z.string().optional(),
+  defectThreshold: z.number().min(10).max(90),
 })
 
 type ReportFormValues = z.infer<typeof reportSchema>
@@ -36,12 +39,11 @@ type ReportFormValues = z.infer<typeof reportSchema>
 interface AIReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (metadata: ReportMetadata) => void;
 }
 
-export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: AIReportDialogProps) {
+export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
-  const { reportMetadata } = useReportStore()
+  const { reportMetadata, setReportMetadata } = useReportStore()
   const { toast } = useToast()
   
   const defaultScanDate = React.useMemo(() => {
@@ -49,25 +51,27 @@ export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: A
     const dateMeta = inspectionResult.plates[0].metadata.find(m => String(m[0]).toLowerCase().includes('date'));
     if (!dateMeta || !dateMeta[1]) return undefined;
 
-    // Handle Excel's numeric date format
     if (typeof dateMeta[1] === 'number') {
         const jsDate = new Date((dateMeta[1] - 25569) * 86400 * 1000);
-        // Check if the date is valid before returning
         return isNaN(jsDate.getTime()) ? undefined : jsDate;
     }
     
-    // Handle string dates
     const dateString = String(dateMeta[1]);
     const parsedDate = new Date(dateString);
     return isNaN(parsedDate.getTime()) ? undefined : parsedDate;
   }, [inspectionResult]);
 
-  const { control, handleSubmit, register, reset } = useForm<ReportFormValues>({
+  const { control, handleSubmit, register, reset, watch } = useForm<ReportFormValues>({
     resolver: zodResolver(reportSchema),
+    defaultValues: {
+      defectThreshold: 50,
+    }
   });
 
+  const defectThresholdValue = watch('defectThreshold');
+
+
   useEffect(() => {
-    // Populate form with stored metadata or default values
     const defaultValues = {
       reportDate: reportMetadata?.reportDate || new Date(),
       scanDate: reportMetadata?.scanDate || defaultScanDate,
@@ -77,13 +81,14 @@ export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: A
       area: reportMetadata?.area || '',
       operatorName: reportMetadata?.operatorName || '',
       remarks: reportMetadata?.remarks || '',
+      defectThreshold: reportMetadata?.defectThreshold || 50,
     };
     reset(defaultValues);
   }, [inspectionResult, reportMetadata, defaultScanDate, reset, open]);
 
 
   const onSubmit = (data: ReportFormValues) => {
-    const finalMetadata = {
+    const finalMetadata: ReportMetadata = {
         ...data,
         companyName: data.companyName || 'N/A',
         projectName: data.projectName || 'N/A',
@@ -91,8 +96,9 @@ export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: A
         area: data.area || 'N/A',
         operatorName: data.operatorName || 'N/A',
         remarks: data.remarks || 'N/A',
+        defectThreshold: data.defectThreshold,
     };
-    onSubmitProp(finalMetadata);
+    setReportMetadata(finalMetadata);
     toast({
       title: "Report Details Saved",
       description: "You can now generate the final report.",
@@ -178,6 +184,35 @@ export function AIReportDialog({ open, onOpenChange, onSubmit: onSubmitProp }: A
                         )}
                     />
                 </div>
+            </div>
+             <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                 <Label htmlFor="defectThreshold">Defect Detection Threshold: {defectThresholdValue}%</Label>
+                 <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p className="max-w-xs">Any area with thickness below this percentage of nominal will be treated as a Defect Patch and included in the report.</p>
+                        </TooltipContent>
+                    </Tooltip>
+                 </TooltipProvider>
+              </div>
+              <Controller
+                name="defectThreshold"
+                control={control}
+                render={({ field }) => (
+                  <Slider
+                    id="defectThreshold"
+                    min={10}
+                    max={90}
+                    step={5}
+                    value={[field.value]}
+                    onValueChange={(value) => field.onChange(value[0])}
+                  />
+                )}
+              />
             </div>
             <div className="space-y-2">
                 <Label htmlFor="operatorName">Operator Name</Label>

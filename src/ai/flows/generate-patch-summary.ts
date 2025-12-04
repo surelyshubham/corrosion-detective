@@ -17,7 +17,8 @@ const PatchSummaryInputSchema = z.object({
     avgThickness: z.string(),
     severity: z.string(),
     nominalThickness: z.number().describe('The nominal thickness of the asset in mm.'),
-    assetType: z.string().describe('The type of asset, e.g., "Pipe" or "Tank".')
+    assetType: z.string().describe('The type of asset, e.g., "Pipe" or "Tank".'),
+    defectThreshold: z.number().describe('The user-defined threshold for what constitutes a critical defect.')
 });
 
 
@@ -28,7 +29,8 @@ const PatchSummaryOutputSchema = z.object({
 export async function generatePatchSummary(
     patch: any, 
     nominalThickness: number, 
-    assetType: string
+    assetType: string,
+    defectThreshold: number,
 ): Promise<string> {
     const input = {
         patchId: patch.id,
@@ -42,6 +44,7 @@ export async function generatePatchSummary(
         severity: patch.severity,
         nominalThickness,
         assetType,
+        defectThreshold,
     };
     const result = await patchSummaryFlow(input);
     return result.summary;
@@ -52,6 +55,7 @@ const prompt = ai.definePrompt({
     input: { schema: PatchSummaryInputSchema },
     output: { schema: PatchSummaryOutputSchema },
     prompt: `You are an expert NDT analyst. Generate a concise engineering summary for the provided corrosion patch data.
+The user has defined the critical defect threshold at {{defectThreshold}}% remaining thickness.
 Focus on corrosion severity, remaining thickness, patch location, and a clear recommendation. Use professional, direct NDT-style language.
 
 Example Output:
