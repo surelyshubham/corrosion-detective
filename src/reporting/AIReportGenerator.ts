@@ -316,3 +316,5 @@ export async function generateAIReport(data: AIReportData) {
   const blob = new Blob([pdfBytes], { type: 'application/pdf' });
   downloadFile(blob, `AI_Report_${data.metadata.assetName?.replace(/ /g,"_") || 'Asset'}.pdf`);
 }
+
+    
