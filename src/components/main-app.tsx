@@ -125,6 +125,20 @@ export function MainApp() {
 
   const isDataLoaded = !!inspectionResult;
 
+  const threeDViewStyle: React.CSSProperties =
+    activeTab === '3d-view'
+      ? { height: '100%', position: 'relative', visibility: 'visible' }
+      : {
+          position: 'fixed',
+          left: '0px',
+          top: '0px',
+          width: '800px',
+          height: '600px',
+          opacity: 0,
+          pointerEvents: 'none',
+          zIndex: -1,
+        };
+
   return (
     <>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-grow flex flex-col p-4 md:p-6 gap-6">
@@ -148,9 +162,9 @@ export function MainApp() {
           <TabsContent value="info" className="h-full">
             {isDataLoaded ? <InfoTab viewRef={threeDeeViewRef} /> : <DataPlaceholder />}
           </TabsContent>
-          <TabsContent value="3d-view" className="h-full">
-            {isDataLoaded ? <ThreeDeeViewTab ref={threeDeeViewRef} /> : <DataPlaceholder />}
-          </TabsContent>
+          <div style={threeDViewStyle} role="tabpanel" hidden={activeTab !== '3d-view'}>
+              {isDataLoaded ? <ThreeDeeViewTab ref={threeDeeViewRef} /> : <DataPlaceholder />}
+          </div>
           <TabsContent value="2d-heatmap" className="h-full">
             {isDataLoaded ? <TwoDeeHeatmapTab /> : <DataPlaceholder />}
           </TabsContent>
