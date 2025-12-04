@@ -87,3 +87,25 @@ export interface MergedInspectionResult {
   condition: Condition;
   aiInsight: AIInsight | null;
 }
+
+
+// Reporting Types
+export interface ReportMetadata {
+  companyName?: string;
+  projectName?: string;
+  assetName?: string;
+  scanDate?: Date;
+  reportDate?: Date;
+  area?: string;
+  operatorName?: string;
+  remarks?: string;
+}
+
+export interface Defect {
+  x: number;
+  y: number;
+  rawThickness: number | null;
+  effectiveThickness: number | null;
+  loss: number | null;
+  percentage: number | null;
+}

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Camera, Expand, Minimize, Pin, Redo, RefreshCw, Percent, Ruler, LocateFixed } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
+import { useImperativeHandle } from 'react'
 
 const getAbsColor = (percentage: number | null): THREE.Color => {
     const color = new THREE.Color();
@@ -108,8 +109,13 @@ function createTextSprite(message: string, opts: { fontsize?: number, fontface?:
     return sprite;
 }
 
+export type PlateView3DRef = {
+  captureScreenshot: () => string;
+  focusOnPoint: (x: number, y: number) => void;
+};
 
-export function PlateView3D() {
+
+export const PlateView3D = React.forwardRef<PlateView3DRef>((props, ref) => {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15)
@@ -202,7 +208,7 @@ export function PlateView3D() {
 
 
     if (refPlaneRef.current) {
-      // The reference plane is now at Z=0, representing the nominal thickness surface
+      // The reference plane is now at Y=0, representing the nominal thickness surface
       refPlaneRef.current.position.y = 0;
       refPlaneRef.current.visible = showReference;
     }
@@ -235,9 +241,9 @@ export function PlateView3D() {
               }
           }
 
-          const allPoints = mergedGrid.flat().filter(p => p.effectiveThickness !== null);
+          const allPoints = mergedGrid.flat().filter(p => p && p.effectiveThickness !== null);
           const maxPoint = allPoints.reduce((prev, current) => {
-            if (current.effectiveThickness === null || prev.effectiveThickness === null) return prev;
+            if (current.effectiveThickness === null || !prev || prev.effectiveThickness === null) return current;
             return (prev.effectiveThickness > current.effectiveThickness) ? prev : current
           }, allPoints[0])
           
@@ -276,13 +282,33 @@ export function PlateView3D() {
     rendererRef.current.render(sceneRef.current, cameraRef.current);
   }, [inspectionResult, zScale, showReference, showMinMax, showOrigin, selectedPoint, nominalThickness]);
 
+  useImperativeHandle(ref, () => ({
+    captureScreenshot: () => {
+      if (!rendererRef.current) return '';
+      rendererRef.current.render(sceneRef.current!, cameraRef.current!);
+      return rendererRef.current.domElement.toDataURL('image/png');
+    },
+    focusOnPoint: (x: number, y: number) => {
+        if (!cameraRef.current || !controlsRef.current || !stats) return;
+        const { gridSize } = stats;
+        const visualHeight = VISUAL_WIDTH * (gridSize.height / gridSize.width);
+        
+        const targetX = (x / gridSize.width - 0.5) * VISUAL_WIDTH;
+        const targetZ = (y / gridSize.height - 0.5) * visualHeight;
+        
+        controlsRef.current.target.set(targetX, 0, targetZ);
+        cameraRef.current.position.set(targetX, 50, targetZ + 30);
+        controlsRef.current.update();
+      }
+  }));
+
   useEffect(() => {
     if (!mountRef.current || !inspectionResult || !geometry) return;
 
     const currentMount = mountRef.current;
 
     // --- Initialize scene, camera, renderer, etc. ---
-    rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     rendererRef.current.setSize(currentMount.clientWidth, currentMount.clientHeight);
     rendererRef.current.setPixelRatio(window.devicePixelRatio);
     currentMount.innerHTML = '';
@@ -347,8 +373,6 @@ export function PlateView3D() {
     selectedMarkerRef.current.visible = false;
     sceneRef.current.add(selectedMarkerRef.current);
     
-    // animate();
-
     const handleResize = () => {
       if (rendererRef.current && cameraRef.current && currentMount) {
         cameraRef.current.aspect = currentMount.clientWidth / currentMount.clientHeight;
@@ -375,7 +399,6 @@ export function PlateView3D() {
             const intersect = intersects[0];
             if (!intersect.face) { setHoveredPoint(null); return; };
 
-            // Find the closest vertex of the intersected face
             const indices = [intersect.face.a, intersect.face.b, intersect.face.c];
             let closestVertexIndex = -1;
             let minDistance = Infinity;
@@ -429,7 +452,6 @@ export function PlateView3D() {
   }, [inspectionResult, geometry, setSelectedPoint, nominalThickness]);
   
   useEffect(() => {
-    // This effect ensures the animation loop continues with updated state
     const animationId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationId);
   }, [animate]);
@@ -549,6 +571,7 @@ export function PlateView3D() {
       </div>
     </div>
   )
-}
+});
+PlateView3D.displayName = "PlateView3D";
 
     

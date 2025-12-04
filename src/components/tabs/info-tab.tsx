@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2, Layers } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers, FileText } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
+import { Button } from '../ui/button'
+import { ReportDialog } from '../reporting/ReportDialog'
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
   const stats = plate.stats
@@ -61,6 +63,8 @@ const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
 
 export function InfoTab() {
   const { inspectionResult } = useInspectionStore()
+  const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
+
 
   if (!inspectionResult) return null
 
@@ -86,6 +90,7 @@ export function InfoTab() {
   ]
 
   return (
+    <>
     <ScrollArea className="h-full pr-4">
       <div className="grid md:grid-cols-3 gap-6 animate-fade-in">
         <div className="md:col-span-2 space-y-6">
@@ -181,9 +186,25 @@ export function InfoTab() {
               </Card>
             )}
 
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <FileText className="text-primary"/>
+                  Reporting
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" onClick={() => setIsReportDialogOpen(true)}>
+                  Generate Report
+                </Button>
+              </CardContent>
+            </Card>
+
           </div>
         </div>
       </div>
     </ScrollArea>
+    {isReportDialogOpen && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} />}
+    </>
   )
 }

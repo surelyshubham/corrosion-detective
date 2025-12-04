@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { RefreshCw, Percent, Ruler, LocateFixed } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
+import { useImperativeHandle } from 'react'
+
 
 const getAbsColor = (percentage: number | null): THREE.Color => {
     const color = new THREE.Color();
@@ -89,7 +91,13 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
     )
 }
 
-export function TankView3D() {
+export type TankView3DRef = {
+  captureScreenshot: () => string;
+  focusOnPoint: (x: number, y: number) => void;
+};
+
+
+export const TankView3D = React.forwardRef<TankView3DRef>((props, ref) => {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15) // Represents radial exaggeration
@@ -231,12 +239,33 @@ export function TankView3D() {
     rendererRef.current.render(sceneRef.current, cameraRef.current);
   }, [inspectionResult, zScale, showOrigin, selectedPoint, nominalThickness]);
 
+  useImperativeHandle(ref, () => ({
+    captureScreenshot: () => {
+      if (!rendererRef.current) return '';
+      rendererRef.current.render(sceneRef.current!, cameraRef.current!);
+      return rendererRef.current.domElement.toDataURL('image/png');
+    },
+    focusOnPoint: (x: number, y: number) => {
+        if (!cameraRef.current || !controlsRef.current || !stats || !pipeOuterDiameter || !pipeLength) return;
+        const { gridSize } = stats;
+        const pipeRadius = pipeOuterDiameter / 2;
+        const angle = (x / (gridSize.width - 1)) * 2 * Math.PI;
+        const height = (y / (gridSize.height - 1)) * pipeLength - pipeLength / 2;
+        const targetX = pipeRadius * Math.cos(angle);
+        const targetZ = pipeRadius * Math.sin(angle);
+        
+        controlsRef.current.target.set(targetX, height, targetZ);
+        cameraRef.current.position.set(targetX * 2, height, targetZ * 2);
+        controlsRef.current.update();
+      }
+  }));
+
   useEffect(() => {
     if (!mountRef.current || !inspectionResult || !geometry || !pipeOuterDiameter || !pipeLength) return;
 
     const currentMount = mountRef.current;
 
-    rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     rendererRef.current.setSize(currentMount.clientWidth, currentMount.clientHeight);
     rendererRef.current.setPixelRatio(window.devicePixelRatio);
     currentMount.innerHTML = '';
@@ -458,6 +487,6 @@ export function TankView3D() {
       </div>
     </div>
   )
-}
-
+});
+TankView3D.displayName = "TankView3D";
     
