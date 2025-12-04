@@ -16,38 +16,43 @@ export function ThreeDeeViewTab() {
   const pipeRef = useRef<PipeView3DRef>(null);
   const tankRef = useRef<TankView3DRef>(null);
 
-  const handleReady = useCallback((assetType: 'Plate' | 'Pipe' | 'Tank' | 'Vessel') => {
-    let functions: { capture: () => string; focus: (x: number, y: number) => void; };
-    switch (assetType) {
+  const handleReady = useCallback(() => {
+    let functions;
+    if (!inspectionResult) return;
+    
+    switch (inspectionResult.assetType) {
       case 'Pipe':
         functions = {
           capture: () => pipeRef.current?.captureScreenshot() || '',
-          focus: (x, y) => pipeRef.current?.focusOnPoint(x, y),
+          focus: (x: number, y: number) => pipeRef.current?.focusOnPoint(x, y),
+          resetCamera: () => pipeRef.current?.resetCamera(),
         };
         break;
       case 'Tank':
       case 'Vessel':
         functions = {
           capture: () => tankRef.current?.captureScreenshot() || '',
-          focus: (x, y) => tankRef.current?.focusOnPoint(x, y),
+          focus: (x: number, y: number) => tankRef.current?.focusOnPoint(x, y),
+          resetCamera: () => tankRef.current?.resetCamera(),
         };
         break;
       case 'Plate':
       default:
         functions = {
           capture: () => plateRef.current?.captureScreenshot() || '',
-          focus: (x, y) => plateRef.current?.focusOnPoint(x, y),
+          focus: (x: number, y: number) => plateRef.current?.focusOnPoint(x, y),
+          resetCamera: () => plateRef.current?.resetCamera(),
         };
         break;
     }
     setCaptureFunctions({ ...functions, isReady: true });
-  }, [setCaptureFunctions]);
+  }, [setCaptureFunctions, inspectionResult]);
 
 
   React.useEffect(() => {
     // When the inspection result changes (e.g., cleared), reset the ready state.
     if (!inspectionResult) {
-      setCaptureFunctions({ capture: () => '', focus: () => {}, isReady: false });
+      setCaptureFunctions({ capture: () => '', focus: () => {}, resetCamera: () => {}, isReady: false });
     }
   }, [inspectionResult, setCaptureFunctions]);
 
@@ -58,12 +63,12 @@ export function ThreeDeeViewTab() {
 
   switch (assetType) {
     case 'Pipe':
-      return <PipeView3D ref={pipeRef} onReady={() => handleReady('Pipe')}/>;
+      return <PipeView3D ref={pipeRef} onReady={handleReady}/>;
     case 'Tank':
     case 'Vessel':
-      return <TankView3D ref={tankRef} onReady={() => handleReady('Tank')}/>;
+      return <TankView3D ref={tankRef} onReady={handleReady}/>;
     case 'Plate':
     default:
-      return <PlateView3D ref={plateRef} onReady={() => handleReady('Plate')}/>;
+      return <PlateView3D ref={plateRef} onReady={handleReady}/>;
   }
 }

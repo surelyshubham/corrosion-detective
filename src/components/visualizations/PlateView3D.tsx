@@ -112,6 +112,7 @@ function createTextSprite(message: string, opts: { fontsize?: number, fontface?:
 export type PlateView3DRef = {
   captureScreenshot: () => string;
   focusOnPoint: (x: number, y: number) => void;
+  resetCamera: () => void;
 };
 
 interface PlateView3DProps {
@@ -199,6 +200,17 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>(({
     meshRef.current.geometry = geometry;
 
   }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid]);
+
+  const resetCamera = useCallback(() => {
+    if (cameraRef.current && controlsRef.current && inspectionResult) {
+        const { stats } = inspectionResult;
+        const { gridSize } = stats;
+        
+        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * (gridSize.height / gridSize.width) * 0.7 );
+        controlsRef.current.target.set(0, 0, 0);
+        controlsRef.current.update();
+    }
+  }, [inspectionResult, zScale]);
 
   const animate = useCallback(() => {
     if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !controlsRef.current || !inspectionResult) return;
@@ -303,7 +315,8 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>(({
         controlsRef.current.target.set(targetX, 0, targetZ);
         cameraRef.current.position.set(targetX, 50, targetZ + 30);
         controlsRef.current.update();
-      }
+    },
+    resetCamera: resetCamera,
   }));
 
   useEffect(() => {
@@ -457,23 +470,12 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>(({
         rendererRef.current.dispose();
       }
     };
-  }, [inspectionResult, geometry, setSelectedPoint, nominalThickness]);
+  }, [inspectionResult, geometry, setSelectedPoint, nominalThickness, onReady]);
   
   useEffect(() => {
     const animationId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationId);
   }, [animate]);
-
-  const resetCamera = () => {
-    if (cameraRef.current && controlsRef.current && inspectionResult) {
-        const { stats } = inspectionResult;
-        const { gridSize } = stats;
-        
-        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * (gridSize.height / gridSize.width) * 0.7 );
-        controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.update();
-    }
-  }
 
   const setView = (view: 'top' | 'side' | 'front') => {
     if (cameraRef.current && controlsRef.current) {

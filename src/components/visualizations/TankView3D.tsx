@@ -94,6 +94,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
 export type TankView3DRef = {
   captureScreenshot: () => string;
   focusOnPoint: (x: number, y: number) => void;
+  resetCamera: () => void;
 };
 
 interface TankView3DProps {
@@ -106,7 +107,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>(({ on
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15) // Represents radial exaggeration
   const [showOrigin, setShowOrigin] = useState(true)
-  const [hoveredPoint, setHoveredPoint] = useState<any>(null)
+  const [hoveredPoint, setHoveredPoint] = useState<any>(null);
   
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -195,6 +196,14 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>(({ on
 
   }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid, pipeOuterDiameter, pipeLength]);
 
+  const resetCamera = useCallback(() => {
+    if (cameraRef.current && controlsRef.current && inspectionResult && pipeOuterDiameter && pipeLength) {
+        cameraRef.current.position.set(pipeOuterDiameter * 0.7, 0, pipeOuterDiameter * 0.7);
+        controlsRef.current.target.set(0, 0, 0);
+        controlsRef.current.update();
+    }
+  }, [inspectionResult, pipeOuterDiameter, pipeLength]);
+
 
   const animate = useCallback(() => {
     if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !controlsRef.current || !inspectionResult) return;
@@ -261,7 +270,8 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>(({ on
         controlsRef.current.target.set(targetX, height, targetZ);
         cameraRef.current.position.set(targetX * 2, height, targetZ * 2);
         controlsRef.current.update();
-      }
+      },
+      resetCamera: resetCamera
   }));
 
   useEffect(() => {
@@ -385,20 +395,12 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>(({ on
         rendererRef.current.dispose();
       }
     };
-  }, [inspectionResult, geometry, setSelectedPoint, pipeOuterDiameter, pipeLength]);
+  }, [inspectionResult, geometry, setSelectedPoint, pipeOuterDiameter, pipeLength, onReady]);
   
   useEffect(() => {
     const animationId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationId);
   }, [animate]);
-
-  const resetCamera = () => {
-    if (cameraRef.current && controlsRef.current && inspectionResult && pipeOuterDiameter && pipeLength) {
-        cameraRef.current.position.set(pipeOuterDiameter * 0.7, 0, pipeOuterDiameter * 0.7);
-        controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.update();
-    }
-  }
 
   const setView = (view: 'top' | 'side' | 'front') => {
     if (cameraRef.current && controlsRef.current && pipeOuterDiameter) {

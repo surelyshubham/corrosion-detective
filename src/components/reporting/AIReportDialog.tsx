@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useState } from 'react'
@@ -17,8 +16,12 @@ import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { useReportStore } from '@/store/use-report-store'
-import { generateInspectionReport, type ReportData } from '@/reporting/ReportGenerator'
-import type { Defect, ReportMetadata } from '@/lib/types'
+import { generateAIReport, type AIReportData } from '@/reporting/AIReportGenerator'
+import { identifyPatches, type IdentifiedPatch } from '@/reporting/patch-detector'
+import type { ReportMetadata } from '@/lib/types'
+import { generateReportSummary } from '@/ai/flows/generate-report-summary'
+import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
+import { useToast } from '@/hooks/use-toast'
 
 const reportSchema = z.object({
   companyName: z.string().optional(),
@@ -33,29 +36,28 @@ const reportSchema = z.object({
 
 type ReportFormValues = z.infer<typeof reportSchema>
 
-interface ReportDialogProps {
+interface AIReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ReportDialog({ open, onOpenChange }: ReportDialogProps) {
+export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
   const { captureFunctions, isReady } = useReportStore()
   const [isGenerating, setIsGenerating] = useState(false)
+  const { toast } = useToast()
   
   const defaultScanDate = React.useMemo(() => {
-    const dateMeta = inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('date'));
-    if (dateMeta && dateMeta[1]) {
-      // Check if it's a number, which could be an Excel date serial number
-      if (typeof dateMeta[1] === 'number') {
-        // Convert Excel serial date to JS Date
-        return new Date(Date.UTC(1899, 11, 30 + dateMeta[1]));
-      }
-      // Check if it's a valid date string
-      const parsedDate = new Date(dateMeta[1]);
-      if (!isNaN(parsedDate.getTime()) && String(dateMeta[1]).length > 5) {
-        return parsedDate;
-      }
+    if (!inspectionResult?.plates[0]?.metadata) return undefined;
+    const dateMeta = inspectionResult.plates[0].metadata.find(m => String(m[0]).toLowerCase().includes('date'));
+    if (!dateMeta || !dateMeta[1]) return undefined;
+
+    if (typeof dateMeta[1] === 'number') {
+      return new Date(Date.UTC(1899, 11, 30 + dateMeta[1]));
+    }
+    const parsedDate = new Date(dateMeta[1]);
+    if (!isNaN(parsedDate.getTime()) && String(dateMeta[1]).length > 5) {
+      return parsedDate;
     }
     return undefined;
   }, [inspectionResult]);
@@ -65,65 +67,83 @@ export function ReportDialog({ open, onOpenChange }: ReportDialogProps) {
     defaultValues: {
       reportDate: new Date(),
       scanDate: defaultScanDate,
-      assetName: inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', '),
-      projectName: inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('project'))?.[1]
+      assetName: inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', ') || 'N/A',
+      projectName: inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('project'))?.[1] || 'N/A'
     },
   })
 
   const onSubmit = async (data: ReportFormValues) => {
-    if (!inspectionResult || !captureFunctions?.capture || !isReady) return;
+    if (!inspectionResult || !captureFunctions?.capture || !isReady) {
+      toast({
+        variant: "destructive",
+        title: "Report Generation Error",
+        description: "The 3D view is not ready or data is missing.",
+      });
+      return;
+    }
     setIsGenerating(true)
 
     try {
+        // 1. Identify defect patches
+        const patches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
+
+        // 2. Capture screenshots
+        if (captureFunctions.resetCamera) captureFunctions.resetCamera();
+        await new Promise(resolve => setTimeout(resolve, 500)); // wait for camera
         const overviewScreenshot = captureFunctions.capture();
 
-        const defects: Defect[] = [];
-        inspectionResult.mergedGrid.forEach((row, y) => {
-            row.forEach((cell, x) => {
-                if (cell && cell.percentage !== null && cell.percentage < 80) { // Adjusted threshold
-                    defects.push({
-                        x,
-                        y,
-                        rawThickness: cell.rawThickness,
-                        effectiveThickness: cell.effectiveThickness,
-                        loss: cell.rawThickness !== null && cell.effectiveThickness !== null ? inspectionResult.nominalThickness - cell.effectiveThickness : null,
-                        percentage: cell.percentage,
-                    });
-                }
-            });
-        });
-        
-        // Sort defects by severity
-        defects.sort((a, b) => (a.percentage || 100) - (b.percentage || 100));
-
-        const defectScreenshots: Record<string, string> = {};
-        for (const defect of defects.slice(0, 5)) { // Limit to top 5 defects for now
+        const patchScreenshots: Record<string, string> = {};
+        for (const patch of patches) {
             if (captureFunctions.focus) {
-                captureFunctions.focus(defect.x, defect.y);
-                // Wait for camera to move
-                await new Promise(resolve => setTimeout(resolve, 500));
+                captureFunctions.focus(patch.center.x, patch.center.y);
+                await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera to move
             }
             const screenshot = captureFunctions.capture();
             if (screenshot) {
-                defectScreenshots[`${defect.x},${defect.y}`] = screenshot;
+                patchScreenshots[patch.id] = screenshot;
             }
         }
+        
+        // 3. Generate AI summaries
+        const overallSummary = await generateReportSummary(inspectionResult, patches);
+        const patchSummaries: Record<string, string> = {};
+        for (const patch of patches) {
+             patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
+        }
 
-
-        const reportData: ReportData = {
-            metadata: data as ReportMetadata,
+        // 4. Assemble report data
+        const reportData: AIReportData = {
+            metadata: {
+              ...data,
+              companyName: data.companyName || 'N/A',
+              projectName: data.projectName || 'N/A',
+              assetName: data.assetName || 'N/A',
+              area: data.area || 'N/A',
+              operatorName: data.operatorName || 'N/A',
+              remarks: data.remarks || 'N/A',
+            },
             inspection: inspectionResult,
-            defects,
+            patches,
             screenshots: {
                 overview: overviewScreenshot,
-                defects: defectScreenshots,
+                patches: patchScreenshots,
+            },
+            summaries: {
+                overall: overallSummary,
+                patches: patchSummaries,
             }
         };
 
-        await generateInspectionReport(reportData);
+        // 5. Generate PDF
+        await generateAIReport(reportData);
         onOpenChange(false);
     } catch (error) {
-        console.error("Failed to generate report", error);
+        console.error("Failed to generate AI report", error);
+        toast({
+          variant: "destructive",
+          title: "Report Generation Failed",
+          description: error instanceof Error ? error.message : "An unknown error occurred.",
+        });
     } finally {
         setIsGenerating(false)
     }
@@ -134,9 +154,9 @@ export function ReportDialog({ open, onOpenChange }: ReportDialogProps) {
       <DialogContent className="sm:max-w-[600px]">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
-            <DialogTitle>Generate Inspection Report</DialogTitle>
+            <DialogTitle>Generate AI-Powered Report</DialogTitle>
             <DialogDescription>
-              Fill in the details for the report. All fields are optional.
+              Fill in the details for the report. Blank fields will be marked "N/A".
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-6 max-h-[70vh] overflow-y-auto pr-4">
@@ -221,7 +241,7 @@ export function ReportDialog({ open, onOpenChange }: ReportDialogProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>Cancel</Button>
             <Button type="submit" disabled={isGenerating || !isReady}>
               {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isGenerating ? 'Generating...' : 'Generate &amp; Download'}
+              {isGenerating ? 'Generating...' : 'Generate AI Report'}
             </Button>
           </DialogFooter>
         </form>

@@ -10,7 +10,7 @@ import { BrainCircuit, Loader2, Layers, FileText } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
 import { Button } from '../ui/button'
-import { ReportDialog } from '../reporting/ReportDialog'
+import { AIReportDialog } from '../reporting/AIReportDialog'
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
   const stats = plate.stats
@@ -195,7 +195,7 @@ export function InfoTab() {
               </CardHeader>
               <CardContent>
                 <Button className="w-full" onClick={() => setIsReportDialogOpen(true)}>
-                  Generate Report
+                  Generate AI Report
                 </Button>
               </CardContent>
             </Card>
@@ -204,7 +204,7 @@ export function InfoTab() {
         </div>
       </div>
     </ScrollArea>
-    {isReportDialogOpen && <ReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} />}
+    {isReportDialogOpen && <AIReportDialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen} />}
     </>
   )
 }
