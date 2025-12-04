@@ -1,3 +1,4 @@
+
 "use client"
 
 import React, { useState, useCallback, useEffect } from "react"
@@ -27,7 +28,7 @@ const TABS = [
 
 export function MainApp() {
   const { toast } = useToast()
-  const { inspectionResult, addPlate, setIsLoading, isLoading, updateAIInsight } = useInspectionStore()
+  const { inspectionResult, addPlate, setIsLoading, isLoading, updateAIInsight, reprocessPlates } = useInspectionStore()
   const [activeTab, setActiveTab] = useState("setup")
 
   const handleFileProcess = useCallback(
@@ -40,14 +41,15 @@ export function MainApp() {
       setIsLoading(true)
       try {
         const arrayBuffer = await file.arrayBuffer()
-        const { metadata, data } = parseExcel(arrayBuffer)
+        // The parser now returns only raw data, not processed.
+        const { metadata, data: rawGridData, detectedNominalThickness } = parseExcel(arrayBuffer)
         
-        if (data.length === 0) {
+        if (rawGridData.length === 0) {
           throw new Error("No valid data points found in the Excel file. Please check the data sheet for valid thickness values.")
         }
         
-        // This is a single plate's data
-        const { processedData, stats } = processData(data, nominalThickness);
+        // Processing happens here, using the final nominal thickness from the form
+        const { processedData, stats } = processData(rawGridData, nominalThickness);
 
         const newPlate: Plate = {
           id: file.name,
@@ -56,6 +58,8 @@ export function MainApp() {
           nominalThickness,
           pipeOuterDiameter: options.pipeOuterDiameter,
           pipeLength: options.pipeLength,
+          // Store both raw and processed data
+          rawGridData: rawGridData,
           processedData,
           stats,
           metadata,
@@ -131,7 +135,11 @@ export function MainApp() {
       
       <div className="flex-grow min-h-0">
         <TabsContent value="setup" className="h-full">
-          <SetupTab onFileProcess={handleFileProcess} isLoading={isLoading} />
+          <SetupTab 
+            onFileProcess={handleFileProcess} 
+            isLoading={isLoading} 
+            onNominalThicknessChange={reprocessPlates}
+          />
         </TabsContent>
         <TabsContent value="info" className="h-full">
           {isDataLoaded ? <InfoTab /> : <DataPlaceholder />}

@@ -1,6 +1,7 @@
+
 import { create } from 'zustand';
 import { persist, createJSONStorage, type PersistOptions } from 'zustand/middleware';
-import type { MergedInspectionResult, AIInsight, Plate, MergedCell } from '@/lib/types';
+import type { MergedInspectionResult, AIInsight, Plate, MergedCell, RawInspectionDataPoint } from '@/lib/types';
 import { processData, reprocessMergedData } from '@/lib/data-processor';
 
 export type ColorMode = 'mm' | '%';
@@ -8,7 +9,7 @@ export type ColorMode = 'mm' | '%';
 interface InspectionState {
   inspectionResult: MergedInspectionResult | null;
   setInspectionResult: (result: MergedInspectionResult | null) => void;
-  addPlate: (plate: Plate, options: {
+  addPlate: (plate: Omit<Plate, 'processedData' | 'stats'> & { rawGridData: RawInspectionDataPoint[] }, options: {
     direction: 'left' | 'right' | 'top' | 'bottom';
     start: number;
   }) => void;
@@ -17,6 +18,7 @@ interface InspectionState {
   selectedPoint: { x: number; y: number } | null;
   setSelectedPoint: (point: { x: number; y: number } | null) => void;
   updateAIInsight: (insight: AIInsight | null) => void;
+  reprocessPlates: (newNominalThickness: number) => void;
   colorMode: ColorMode;
   setColorMode: (mode: ColorMode) => void;
 }
@@ -58,16 +60,58 @@ export const useInspectionStore = create<InspectionState>()(
           });
         }
       },
+      
+      reprocessPlates: (newNominalThickness) => {
+        const currentResult = get().inspectionResult;
+        if (!currentResult) return;
 
-      addPlate: (newPlate, options) => {
+        // 1. Reprocess each plate individually
+        const reprocessedPlates = currentResult.plates.map(plate => {
+          const { processedData, stats } = processData(plate.rawGridData, newNominalThickness);
+          return { ...plate, processedData, stats, nominalThickness: newNominalThickness };
+        });
+
+        // 2. Re-create the merged grid
+        const newMergedGrid = currentResult.mergedGrid.map(row => 
+            row.map(cell => {
+                if (!cell || cell.rawThickness === null) return cell;
+                
+                const effectiveThickness = Math.min(cell.rawThickness, newNominalThickness);
+                const percentage = (effectiveThickness / newNominalThickness) * 100;
+                
+                return { ...cell, effectiveThickness, percentage };
+            })
+        );
+        
+        // 3. Recalculate global stats
+        const { stats, condition } = reprocessMergedData(newMergedGrid, newNominalThickness);
+
+        // 4. Set the new state
+        set({
+            inspectionResult: {
+                ...currentResult,
+                plates: reprocessedPlates,
+                mergedGrid: newMergedGrid,
+                nominalThickness: newNominalThickness,
+                stats,
+                condition,
+                aiInsight: null, // Reset AI insight as data has changed
+            }
+        });
+      },
+
+      addPlate: (newPlateData, options) => {
         const { direction, start } = options;
         const currentResult = get().inspectionResult;
-        
+
+        const { processedData, stats, condition } = processData(newPlateData.rawGridData, newPlateData.nominalThickness);
+        const newPlate: Plate = { ...newPlateData, processedData, stats };
+
         // If nominal thickness has changed, reprocess all existing plates
         const platesToProcess = (currentResult?.plates || []).map(p => {
             if (p.nominalThickness !== newPlate.nominalThickness) {
-                const { processedData, stats } = processData(p.processedData, newPlate.nominalThickness);
-                return { ...p, nominalThickness: newPlate.nominalThickness, processedData, stats };
+                const { processedData: reprocData, stats: reprocStats } = processData(p.rawGridData, newPlate.nominalThickness);
+                return { ...p, nominalThickness: newPlate.nominalThickness, processedData: reprocData, stats: reprocStats };
             }
             return p;
         });
@@ -81,7 +125,6 @@ export const useInspectionStore = create<InspectionState>()(
 
         if (!initialResult) {
           // This is the first plate
-          const { processedData, stats, condition } = processData(newPlate.processedData, newPlate.nominalThickness);
           const grid: MergedInspectionResult['mergedGrid'] = [];
           const dataMap = new Map(processedData.map(p => [`${p.x},${p.y}`, p]));
 
@@ -190,7 +233,7 @@ export const useInspectionStore = create<InspectionState>()(
         });
 
 
-        const { stats, condition } = reprocessMergedData(newMergedGrid, newPlate.nominalThickness);
+        const { stats: mergedStats, condition: mergedCondition } = reprocessMergedData(newMergedGrid, newPlate.nominalThickness);
         
         const newInspectionResult: MergedInspectionResult = {
           ...initialResult,
@@ -201,8 +244,8 @@ export const useInspectionStore = create<InspectionState>()(
           pipeOuterDiameter: newPlate.pipeOuterDiameter,
           pipeLength: newPlate.pipeLength,
           aiInsight: null, // Reset AI insight after merge
-          stats,
-          condition,
+          stats: mergedStats,
+          condition: mergedCondition,
         };
 
         set({ inspectionResult: newInspectionResult });

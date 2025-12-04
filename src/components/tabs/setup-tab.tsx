@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -11,12 +11,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { assetTypes, type AssetType } from '@/lib/types'
-import { FileUp, Loader2, Paperclip, X, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, Merge } from 'lucide-react'
+import { FileUp, Loader2, Paperclip, X, Merge } from 'lucide-react'
 import { DummyDataGenerator } from '@/components/dummy-data-generator'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { useToast } from '@/hooks/use-toast'
+import { parseExcel } from '@/lib/excel-parser'
 
 interface SetupTabProps {
   onFileProcess: (file: File, assetType: AssetType, nominalThickness: number, options: {
@@ -26,6 +27,7 @@ interface SetupTabProps {
     pipeLength?: number;
   }) => void
   isLoading: boolean
+  onNominalThicknessChange: (newNominal: number) => void;
 }
 
 const setupSchema = z.object({
@@ -45,7 +47,7 @@ const mergeSchema = z.object({
 type MergeFormValues = z.infer<typeof mergeSchema>;
 
 
-export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
+export function SetupTab({ onFileProcess, isLoading, onNominalThicknessChange }: SetupTabProps) {
   const { inspectionResult, setInspectionResult } = useInspectionStore();
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null)
@@ -72,7 +74,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
   });
 
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (inspectionResult) {
       setValue('assetType', inspectionResult.assetType);
       setValue('nominalThickness', inspectionResult.nominalThickness);
@@ -86,17 +88,39 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
   }, [inspectionResult, setValue]);
 
   const selectedAssetType = watch('assetType')
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0]
-    if (selectedFile) {
-      if (selectedFile.name.endsWith('.xlsx')) {
-        setFile(selectedFile)
+  
+  const handleFileDrop = async (file: File) => {
+    if (file.name.endsWith('.xlsx')) {
+        setFile(file)
         setFileError(null)
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const { detectedNominalThickness } = parseExcel(arrayBuffer);
+            if (detectedNominalThickness !== null) {
+                setValue('nominalThickness', detectedNominalThickness);
+                 toast({
+                    title: "Nominal Thickness Detected",
+                    description: `Set to ${detectedNominalThickness.toFixed(2)} mm based on file metadata. You can edit this value if needed.`,
+                });
+            }
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Error reading file',
+                description: error.message,
+            });
+        }
+
       } else {
         setFile(null)
         setFileError('Invalid file type. Please upload a .xlsx file.')
       }
+  }
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0]
+    if (selectedFile) {
+      handleFileDrop(selectedFile);
     }
   }
   
@@ -105,13 +129,7 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       e.preventDefault();
       const droppedFile = e.dataTransfer.files?.[0];
       if (droppedFile) {
-        if (droppedFile.name.endsWith('.xlsx')) {
-            setFile(droppedFile);
-            setFileError(null);
-        } else {
-            setFile(null);
-            setFileError('Invalid file type. Please upload a .xlsx file.');
-        }
+        handleFileDrop(droppedFile);
       }
   };
 
@@ -168,6 +186,14 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
       handleInitialSubmit();
     }
   };
+
+  // Debounce handler for nominal thickness change
+  const handleNominalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = parseFloat(e.target.value);
+    if (!isNaN(newValue) && newValue > 0) {
+      onNominalThicknessChange(newValue);
+    }
+  }
   
   return (
     <div className="grid md:grid-cols-2 gap-6 h-full">
@@ -263,7 +289,18 @@ export function SetupTab({ onFileProcess, isLoading }: SetupTabProps) {
                 name="nominalThickness"
                 control={control}
                 render={({ field }) => (
-                  <Input id="nominalThickness" type="number" step="0.1" {...field} disabled={isLoading} />
+                  <Input 
+                    id="nominalThickness" 
+                    type="number" 
+                    step="0.1" 
+                    {...field}
+                    onChange={(e) => {
+                      field.onChange(e);
+                      if (inspectionResult) {
+                         handleNominalChange(e);
+                      }
+                    }}
+                    disabled={isLoading} />
                 )}
               />
               {errors.nominalThickness && <p className="text-sm text-destructive">{errors.nominalThickness.message}</p>}

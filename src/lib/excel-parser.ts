@@ -5,6 +5,7 @@ import type { InspectionDataPoint } from './types';
 export interface ParsedExcelResult {
   metadata: any[][];
   data: Omit<InspectionDataPoint, 'effectiveThickness' | 'deviation' | 'percentage' | 'wallLoss'>[];
+  detectedNominalThickness: number | null;
 }
 
 export function parseExcel(file: ArrayBuffer): ParsedExcelResult {
@@ -22,15 +23,36 @@ export function parseExcel(file: ArrayBuffer): ParsedExcelResult {
       throw new Error("Invalid Excel format: Expected at least 20 rows for metadata and data headers.");
   }
 
+  let detectedNominalThickness: number | null = null;
+  let maxThicknessValue: number | null = null;
   const metadata: any[][] = [];
+  
   for (let i = 0; i < 18; i++) {
     const row = rows[i];
     if (row && (row[0] !== undefined || row[1] !== undefined)) {
-      const key = row[0] ? String(row[0]).split('=')[0].split('(')[0].trim() : '';
-      const value = row[1] !== undefined ? row[1] : (row[0] ? String(row[0]).split('=')[1]?.trim() : '');
-      metadata.push([key, value || '']);
+      const key = row[0] ? String(row[0]).split('=')[0].split('(')[0].trim().toLowerCase() : '';
+      const valueString = row[1] !== undefined ? String(row[1]) : (row[0] ? String(row[0]).split('=')[1]?.trim() : '');
+      const value = parseFloat(valueString);
+      
+      metadata.push([row[0] || '', row[1] || '']);
+
+      if (key.includes('nominal thickness')) {
+        if (!isNaN(value)) {
+            detectedNominalThickness = value;
+        }
+      } else if (key.includes('max thickness')) {
+        if (!isNaN(value)) {
+            maxThicknessValue = value;
+        }
+      }
     }
   }
+
+  // If nominal thickness wasn't explicitly found, use max thickness as a fallback
+  if (detectedNominalThickness === null && maxThicknessValue !== null) {
+      detectedNominalThickness = maxThicknessValue;
+  }
+
 
   const xCoordsRow = rows[18];
   if (!xCoordsRow || xCoordsRow.length < 2) {
@@ -52,11 +74,10 @@ export function parseExcel(file: ArrayBuffer): ParsedExcelResult {
       const thicknessValue = dataRow[j];
       let rawThickness: number | null;
 
-      if (thicknessValue === null || thicknessValue === undefined || String(thicknessValue).trim() === '') {
+      if (thicknessValue === null || thicknessValue === undefined || String(thicknessValue).trim() === '' || Number.isNaN(Number(thicknessValue))) {
         rawThickness = null;
       } else {
-        const num = Number(thicknessValue);
-        rawThickness = isNaN(num) ? null : num;
+        rawThickness = Number(thicknessValue);
       }
       
       data.push({
@@ -70,5 +91,6 @@ export function parseExcel(file: ArrayBuffer): ParsedExcelResult {
   return {
     metadata,
     data,
+    detectedNominalThickness,
   };
 }

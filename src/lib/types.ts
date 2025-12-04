@@ -28,6 +28,8 @@ export interface InspectionDataPoint {
   wallLoss: number | null;
 }
 
+export type RawInspectionDataPoint = Omit<InspectionDataPoint, 'effectiveThickness' | 'deviation' | 'percentage' | 'wallLoss'>
+
 export interface InspectionStats {
   minThickness: number;
   maxThickness: number;
@@ -54,6 +56,7 @@ export interface AIInsight {
 export type Plate = {
   id: string; // Typically the filename
   fileName: string;
+  rawGridData: RawInspectionDataPoint[];
   processedData: InspectionDataPoint[];
   stats: InspectionStats;
   metadata: any[][];
