@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useRef, useEffect, useState, useMemo } from 'react'
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useInspectionStore, type ColorMode } from '@/store/use-inspection-store'
@@ -119,8 +119,13 @@ export function ThreeDeeViewTab() {
   
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null)
   const meshRef = useRef<THREE.Mesh | null>(null);
+  const refPlaneRef = useRef<THREE.Mesh | null>(null);
+  const originMarkerRef = useRef<THREE.Mesh | null>(null);
+  const minMaxGroupRef = useRef<THREE.Group | null>(null);
+  const selectedMarkerRef = useRef<THREE.Mesh | null>(null);
 
   const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter, pipeLength } = inspectionResult || {};
 
@@ -234,175 +239,54 @@ export function ThreeDeeViewTab() {
   }, [geometry, zScale, colorMode, nominalThickness, stats, mergedGrid, assetType, pipeOuterDiameter, pipeLength]);
 
 
-  useEffect(() => {
-    if (!mountRef.current || !inspectionResult || !geometry) return
+  const animate = useCallback(() => {
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !controlsRef.current || !inspectionResult) return;
 
-    const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter, pipeLength } = inspectionResult
-    const { gridSize, minThickness, maxThickness } = stats
-    
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
-    renderer.setPixelRatio(window.devicePixelRatio)
-    mountRef.current.innerHTML = ''
-    mountRef.current.appendChild(renderer.domElement)
+    requestAnimationFrame(animate);
+    controlsRef.current.update();
 
-    const scene = new THREE.Scene()
-    sceneRef.current = scene
-    
-    const aspect = gridSize.height / gridSize.width;
-    const visualHeight = VISUAL_WIDTH * aspect;
-
-    const camera = new THREE.PerspectiveCamera(60, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 2000)
-    cameraRef.current = camera
-
-    const controls = new OrbitControls(camera, renderer.domElement)
-    controls.update()
-    controlsRef.current = controls
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7))
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0)
-    scene.add(dirLight)
-
-    const length = pipeLength || 100;
-    if (assetType === 'Pipe' && pipeOuterDiameter) {
-        camera.position.set(pipeOuterDiameter * 0.7, length * 0.7, pipeOuterDiameter * 0.7);
-        controls.target.set(0, 0, 0)
-        dirLight.position.set(50, 100, 50);
-
-    } else {
-        camera.position.set(VISUAL_WIDTH * 0.7, VISUAL_WIDTH * 0.9, zScale * 2);
-        controls.target.set(0, 0, 0)
-        dirLight.position.set(VISUAL_WIDTH, visualHeight*2, zScale * 3)
-
-        // AXES and GRIDS for Plate
-        const gridContainer = new THREE.Group();
-        const mainGrid = new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444);
-        gridContainer.add(mainGrid);
-
-        const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
-        axesHelper.position.set(-VISUAL_WIDTH/2, 0, -visualHeight/2);
-        gridContainer.add(axesHelper);
-        
-        const axisLabels = new THREE.Group();
-        const xLabel = createTextSprite("X", {fontsize: 32});
-        xLabel.position.set(VISUAL_WIDTH / 2 + 10, 0, -visualHeight / 2);
-        axisLabels.add(xLabel);
-
-        const yLabel = createTextSprite("Y", {fontsize: 32});
-        yLabel.position.set(-VISUAL_WIDTH / 2, 0, visualHeight / 2 + 10);
-        axisLabels.add(yLabel);
-
-        const zLabel = createTextSprite("Z (Thickness)", {fontsize: 32});
-        zLabel.position.set(-VISUAL_WIDTH / 2, zScale > 0 ? zScale + 10 : 10, -visualHeight / 2);
-        axisLabels.add(zLabel);
-        
-        const tickLength = 2;
-        const numTicks = 5;
-
-        for (let i = 0; i <= numTicks; i++) {
-            const frac = i / numTicks;
-            const xPos = (frac - 0.5) * VISUAL_WIDTH;
-            const xTickLabel = createTextSprite(`${Math.round(frac * gridSize.width)}`, { fontsize: 18 });
-            xTickLabel.position.set(xPos, 0, -visualHeight / 2 - tickLength - 5);
-            axisLabels.add(xTickLabel);
-
-            const zPos = (frac - 0.5) * visualHeight;
-            const yTickLabel = createTextSprite(`${Math.round(frac * gridSize.height)}`, { fontsize: 18 });
-            yTickLabel.position.set(-VISUAL_WIDTH / 2 - tickLength - 10, 0, zPos);
-            axisLabels.add(yTickLabel);
-        }
-        
-        gridContainer.add(axisLabels);
-        scene.add(gridContainer);
-    }
-
-
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-    meshRef.current = mesh;
-
-    const refPlaneGeom = new THREE.PlaneGeometry(VISUAL_WIDTH * 1.1, visualHeight * 1.1);
-    refPlaneGeom.rotateX(-Math.PI / 2);
-    const refPlaneMat = new THREE.MeshStandardMaterial({ color: 0x1e90ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
-    const refPlane = new THREE.Mesh(refPlaneGeom, refPlaneMat);
-    refPlane.visible = showReference;
-    scene.add(refPlane);
-    
+    const { mergedGrid, stats, nominalThickness, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+    const { gridSize, minThickness, maxThickness } = stats;
     const effTRange = stats.maxThickness - stats.minThickness;
+    const length = pipeLength || 100;
+    const visualHeight = VISUAL_WIDTH * (gridSize.height / gridSize.width);
 
-    // --- Origin (0,0) Marker ---
-    const originMarker = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshBasicMaterial({ color: 0xff00ff })); // Magenta cube
-    scene.add(originMarker);
 
-    const minMaxGroup = new THREE.Group();
-    
-    let minMarker: THREE.Mesh | null = null;
-    if(stats.worstLocation){
-        minMarker = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        minMaxGroup.add(minMarker);
-    }
-    
-    const allPoints = mergedGrid.flat().filter(p => p.effectiveThickness !== null);
-    const maxPoint = allPoints.reduce((prev, current) => {
-      if (current.effectiveThickness === null || prev.effectiveThickness === null) return prev;
-      return (prev.effectiveThickness > current.effectiveThickness) ? prev : current
-    }, allPoints[0])
-    
-    let maxMarker: THREE.Mesh | null = null;
-    let maxPointCoords = {x: 0, y: 0};
-
-    // Find coordinates of maxPoint
-    if(maxPoint) {
-        for (let y = 0; y < gridSize.height; y++) {
-            const x = mergedGrid[y].findIndex(p => p && p.effectiveThickness === maxPoint.effectiveThickness);
-            if(x !== -1) {
-                maxPointCoords = { x, y };
-                break;
-            }
-        }
-        maxMarker = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff}));
-        minMaxGroup.add(maxMarker);
-    }
-
-    minMaxGroup.visible = showMinMax;
-    scene.add(minMaxGroup);
-    
-    const selectedMarker = new THREE.Mesh(new THREE.SphereGeometry(2.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
-    selectedMarker.visible = false;
-    scene.add(selectedMarker);
-    
-    const animate = () => {
-      requestAnimationFrame(animate)
-      controls.update()
-      
+    if (refPlaneRef.current) {
       const normNominal = effTRange > 0 ? (nominalThickness - stats.minThickness) / effTRange : 0;
-      refPlane.position.y = normNominal * zScale;
-      refPlane.visible = showReference && assetType !== 'Pipe';
+      refPlaneRef.current.position.y = normNominal * zScale;
+      refPlaneRef.current.visible = showReference && assetType !== 'Pipe';
+    }
 
-      originMarker.visible = showOrigin;
-      if (showOrigin) {
-        const originData = mergedGrid[0]?.[0];
-        if (assetType === 'Pipe' && pipeOuterDiameter) {
-            const pipeRadius = pipeOuterDiameter / 2;
-            let r = pipeRadius;
-            if (originData && originData.effectiveThickness !== null) {
-                const loss = nominalThickness - originData.effectiveThickness;
-                r = pipeRadius - (loss * zScale);
+    if (originMarkerRef.current) {
+        originMarkerRef.current.visible = showOrigin;
+        if (showOrigin) {
+            const originData = mergedGrid[0]?.[0];
+            if (assetType === 'Pipe' && pipeOuterDiameter) {
+                const pipeRadius = pipeOuterDiameter / 2;
+                let r = pipeRadius;
+                if (originData && originData.effectiveThickness !== null) {
+                    const loss = nominalThickness - originData.effectiveThickness;
+                    r = pipeRadius - (loss * zScale);
+                }
+                originMarkerRef.current.position.set(r, 0, -length / 2);
+            } else { // Plate
+                let yPos = 0;
+                if (originData && originData.effectiveThickness !== null) {
+                    const normY = effTRange > 0 ? (originData.effectiveThickness - minThickness) / effTRange : 0;
+                    yPos = normY * zScale;
+                }
+                originMarkerRef.current.position.set(-VISUAL_WIDTH / 2, yPos, -visualHeight / 2);
             }
-            originMarker.position.set(r, 0, -length / 2);
-        } else { // Plate
-            let yPos = 0;
-            if (originData && originData.effectiveThickness !== null) {
-                const normY = effTRange > 0 ? (originData.effectiveThickness - minThickness) / effTRange : 0;
-                yPos = normY * zScale;
-            }
-            originMarker.position.set(-VISUAL_WIDTH / 2, yPos, -visualHeight / 2);
         }
-      }
+    }
 
-
-      if (assetType !== 'Pipe') {
+    if (minMaxGroupRef.current) {
+      minMaxGroupRef.current.visible = showMinMax && assetType !== 'Pipe';
+      if (showMinMax && assetType !== 'Pipe') {
+          const minMarker = minMaxGroupRef.current.children[0] as THREE.Mesh;
+          const maxMarker = minMaxGroupRef.current.children[1] as THREE.Mesh;
+          
           if(minMarker && stats.worstLocation){ 
               const pointData = mergedGrid[stats.worstLocation.y]?.[stats.worstLocation.x];
               if (pointData && pointData.effectiveThickness !== null) {
@@ -410,67 +294,158 @@ export function ThreeDeeViewTab() {
                 minMarker.position.set( (stats.worstLocation.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMinY * zScale, (stats.worstLocation.y / gridSize.height - 0.5) * visualHeight);
               }
           }
+
+          const allPoints = mergedGrid.flat().filter(p => p.effectiveThickness !== null);
+          const maxPoint = allPoints.reduce((prev, current) => {
+            if (current.effectiveThickness === null || prev.effectiveThickness === null) return prev;
+            return (prev.effectiveThickness > current.effectiveThickness) ? prev : current
+          }, allPoints[0])
+          
           if(maxMarker && maxPoint && maxPoint.effectiveThickness !== null){ 
+              let maxPointCoords = {x: 0, y: 0};
+              for (let y = 0; y < gridSize.height; y++) {
+                  const x = mergedGrid[y].findIndex(p => p && p.effectiveThickness === maxPoint.effectiveThickness);
+                  if(x !== -1) {
+                      maxPointCoords = { x, y };
+                      break;
+                  }
+              }
               const normMaxY = effTRange > 0 ? (maxPoint.effectiveThickness - stats.minThickness) / effTRange : 0;
               maxMarker.position.set( (maxPointCoords.x / gridSize.width - 0.5) * VISUAL_WIDTH, normMaxY * zScale, (maxPointCoords.y / gridSize.height - 0.5) * visualHeight);
            }
       }
-      minMaxGroup.visible = showMinMax && assetType !== 'Pipe';
-
-      if (selectedPoint) {
-          const pointData = mergedGrid[selectedPoint.y]?.[selectedPoint.x];
-          if (pointData && pointData.effectiveThickness !== null) {
-              if (assetType === 'Pipe' && pipeOuterDiameter) {
-                  const pipeRadius = pipeOuterDiameter / 2;
-                  const angle = (selectedPoint.x / (gridSize.width - 1)) * 2 * Math.PI;
-                  const z = (selectedPoint.y / (gridSize.height - 1)) * length - length / 2;
-                  const loss = nominalThickness - pointData.effectiveThickness;
-                  const r = pipeRadius - (loss * zScale);
-                  selectedMarker.position.set(r * Math.cos(angle), r * Math.sin(angle), z);
-
-              } else { // Plate
-                  const normY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
-                  selectedMarker.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, normY * zScale, (selectedPoint.y / gridSize.height - 0.5) * visualHeight );
-              }
-              selectedMarker.visible = true;
-          } else {
-              selectedMarker.visible = false;
-          }
-      } else {
-          selectedMarker.visible = false;
-      }
-      
-      renderer.render(scene, camera)
     }
-    animate()
+
+    if (selectedMarkerRef.current) {
+        if (selectedPoint) {
+            const pointData = mergedGrid[selectedPoint.y]?.[selectedPoint.x];
+            if (pointData && pointData.effectiveThickness !== null) {
+                if (assetType === 'Pipe' && pipeOuterDiameter) {
+                    const pipeRadius = pipeOuterDiameter / 2;
+                    const angle = (selectedPoint.x / (gridSize.width - 1)) * 2 * Math.PI;
+                    const z = (selectedPoint.y / (gridSize.height - 1)) * length - length / 2;
+                    const loss = nominalThickness - pointData.effectiveThickness;
+                    const r = pipeRadius - (loss * zScale);
+                    selectedMarkerRef.current.position.set(r * Math.cos(angle), r * Math.sin(angle), z);
+
+                } else { // Plate
+                    const normY = effTRange > 0 ? (pointData.effectiveThickness - stats.minThickness) / effTRange : 0;
+                    selectedMarkerRef.current.position.set( (selectedPoint.x / gridSize.width - 0.5) * VISUAL_WIDTH, normY * zScale, (selectedPoint.y / gridSize.height - 0.5) * visualHeight );
+                }
+                selectedMarkerRef.current.visible = true;
+            } else {
+                selectedMarkerRef.current.visible = false;
+            }
+        } else {
+            selectedMarkerRef.current.visible = false;
+        }
+    }
+    
+    rendererRef.current.render(sceneRef.current, cameraRef.current);
+  }, [inspectionResult, zScale, showReference, showMinMax, showOrigin, selectedPoint]);
+
+  useEffect(() => {
+    if (!mountRef.current || !inspectionResult || !geometry) return;
+
+    const currentMount = mountRef.current;
+
+    // --- Initialize scene, camera, renderer, etc. ---
+    rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    rendererRef.current.setSize(currentMount.clientWidth, currentMount.clientHeight);
+    rendererRef.current.setPixelRatio(window.devicePixelRatio);
+    currentMount.innerHTML = '';
+    currentMount.appendChild(rendererRef.current.domElement);
+
+    sceneRef.current = new THREE.Scene();
+    
+    const { gridSize, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
+    const aspect = gridSize.height / gridSize.width;
+    const visualHeight = VISUAL_WIDTH * aspect;
+
+    cameraRef.current = new THREE.PerspectiveCamera(60, currentMount.clientWidth / currentMount.clientHeight, 0.1, 2000);
+    
+    controlsRef.current = new OrbitControls(cameraRef.current, rendererRef.current.domElement);
+    controlsRef.current.update();
+
+    sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    sceneRef.current.add(dirLight);
+
+    const length = pipeLength || 100;
+    if (assetType === 'Pipe' && pipeOuterDiameter) {
+        cameraRef.current.position.set(pipeOuterDiameter * 0.7, length * 0.7, pipeOuterDiameter * 0.7);
+        controlsRef.current.target.set(0, 0, 0);
+        dirLight.position.set(50, 100, 50);
+
+    } else {
+        cameraRef.current.position.set(VISUAL_WIDTH * 0.7, VISUAL_WIDTH * 0.9, zScale * 2);
+        controlsRef.current.target.set(0, 0, 0);
+        dirLight.position.set(VISUAL_WIDTH, visualHeight*2, zScale * 3);
+
+        const gridContainer = new THREE.Group();
+        gridContainer.add(new THREE.GridHelper(Math.max(VISUAL_WIDTH, visualHeight), 10, 0x888888, 0x444444));
+        const axesHelper = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.6);
+        axesHelper.position.set(-VISUAL_WIDTH/2, 0, -visualHeight/2);
+        gridContainer.add(axesHelper);
+        
+        const axisLabels = new THREE.Group();
+        axisLabels.add(createTextSprite("X", {fontsize: 32})).position.set(VISUAL_WIDTH / 2 + 10, 0, -visualHeight / 2);
+        axisLabels.add(createTextSprite("Y", {fontsize: 32})).position.set(-VISUAL_WIDTH / 2, 0, visualHeight / 2 + 10);
+        axisLabels.add(createTextSprite("Z (Thickness)", {fontsize: 32})).position.set(-VISUAL_WIDTH / 2, zScale > 0 ? zScale + 10 : 10, -visualHeight / 2);
+        gridContainer.add(axisLabels);
+        sceneRef.current.add(gridContainer);
+    }
+    
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    meshRef.current = new THREE.Mesh(geometry, material);
+    sceneRef.current.add(meshRef.current);
+
+    if (assetType !== 'Pipe') {
+        const refPlaneGeom = new THREE.PlaneGeometry(VISUAL_WIDTH * 1.1, visualHeight * 1.1);
+        refPlaneGeom.rotateX(-Math.PI / 2);
+        refPlaneRef.current = new THREE.Mesh(refPlaneGeom, new THREE.MeshStandardMaterial({ color: 0x1e90ff, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+        sceneRef.current.add(refPlaneRef.current);
+    }
+
+    originMarkerRef.current = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshBasicMaterial({ color: 0xff00ff })); // Magenta cube
+    sceneRef.current.add(originMarkerRef.current);
+
+    minMaxGroupRef.current = new THREE.Group();
+    minMaxGroupRef.current.add(new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0xff0000})));
+    minMaxGroupRef.current.add(new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({color: 0x0000ff})));
+    sceneRef.current.add(minMaxGroupRef.current);
+    
+    selectedMarkerRef.current = new THREE.Mesh(new THREE.SphereGeometry(2.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.9 }));
+    selectedMarkerRef.current.visible = false;
+    sceneRef.current.add(selectedMarkerRef.current);
+    
+    animate();
 
     const handleResize = () => {
-      if (mountRef.current) {
-        camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight
-        camera.updateProjectionMatrix()
-        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
+      if (rendererRef.current && cameraRef.current && currentMount) {
+        cameraRef.current.aspect = currentMount.clientWidth / currentMount.clientHeight;
+        cameraRef.current.updateProjectionMatrix();
+        rendererRef.current.setSize(currentMount.clientWidth, currentMount.clientHeight);
       }
-    }
-    window.addEventListener('resize', handleResize)
+    };
+    window.addEventListener('resize', handleResize);
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
     const onMouseMove = (event: MouseEvent) => {
-        if (!mountRef.current || !meshRef.current) return;
-        const rect = mountRef.current.getBoundingClientRect();
+        if (!currentMount || !meshRef.current || !cameraRef.current || !geometry) return;
+        const rect = currentMount.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         
-        raycaster.setFromCamera(mouse, camera);
+        raycaster.setFromCamera(mouse, cameraRef.current);
         const intersects = raycaster.intersectObject(meshRef.current!);
         
         if (intersects.length > 0) {
             const intersect = intersects[0];
             if (!intersect.face) return;
 
-            // This logic assumes a non-indexed BufferGeometry.
-            // We check vertices a, b, and c of the intersected face to find the closest grid point.
             const indices = [intersect.face.a, intersect.face.b, intersect.face.c];
             let closestIndex = -1;
             let minDistance = Infinity;
@@ -484,9 +459,9 @@ export function ThreeDeeViewTab() {
                 }
             });
 
-            if (closestIndex !== -1) {
-                const x = closestIndex % gridSize.width;
-                const y = Math.floor(closestIndex / gridSize.width);
+            if (closestIndex !== -1 && mergedGrid) {
+                const x = closestIndex % inspectionResult.stats.gridSize.width;
+                const y = Math.floor(closestIndex / inspectionResult.stats.gridSize.width);
                 const cellData = mergedGrid[y]?.[x];
 
                 if (cellData) {
@@ -508,20 +483,26 @@ export function ThreeDeeViewTab() {
         }
     };
 
-    mountRef.current.addEventListener('mousemove', onMouseMove);
-    mountRef.current.addEventListener('click', onClick);
-
+    currentMount.addEventListener('mousemove', onMouseMove);
+    currentMount.addEventListener('click', onClick);
 
     return () => {
-      window.removeEventListener('resize', handleResize)
-      if (mountRef.current) {
-        mountRef.current.removeEventListener('mousemove', onMouseMove);
-        mountRef.current.removeEventListener('click', onClick);
-        mountRef.current.innerHTML = ''
+      window.removeEventListener('resize', handleResize);
+      currentMount.removeEventListener('mousemove', onMouseMove);
+      currentMount.removeEventListener('click', onClick);
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        // currentMount.innerHTML = '';
       }
-    }
-  }, [inspectionResult, geometry, setSelectedPoint]) // only re-init scene when data or geometry changes
+    };
+  }, [inspectionResult, geometry, setSelectedPoint]);
   
+  useEffect(() => {
+    // This effect ensures the animation loop continues with updated state
+    const animationId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationId);
+  }, [animate]);
+
   const resetCamera = () => {
     if (cameraRef.current && controlsRef.current && inspectionResult) {
         const { gridSize, assetType, pipeOuterDiameter, pipeLength } = inspectionResult;
@@ -531,8 +512,7 @@ export function ThreeDeeViewTab() {
             cameraRef.current.position.set(pipeOuterDiameter * 0.7, length * 0.7, pipeOuterDiameter * 0.7);
             controlsRef.current.target.set(0, 0, 0);
         } else {
-            const aspect = gridSize.height / gridSize.width;
-            cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * aspect * 0.7 );
+            cameraRef.current.position.set(VISUAL_WIDTH * 0.7, zScale * 4, VISUAL_WIDTH * (gridSize.height / gridSize.width) * 0.7 );
             controlsRef.current.target.set(0, 0, 0);
         }
         controlsRef.current.update();
