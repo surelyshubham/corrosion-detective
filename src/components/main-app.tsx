@@ -16,7 +16,8 @@ import { InfoTab } from "./tabs/info-tab"
 import { DataTableTab } from "./tabs/data-table-tab"
 import { TwoDeeHeatmapTab } from "./tabs/two-dee-heatmap-tab"
 import { ThreeDeeViewTab } from "./tabs/three-dee-view-tab"
-import { FileUp, GanttChartSquare, Image, Info, Table } from "lucide-react"
+import { ReportTab } from "./tabs/report-tab"
+import { FileUp, GanttChartSquare, Image, Info, Table, FileText } from "lucide-react"
 import { Card, CardContent } from "./ui/card"
 
 
@@ -25,6 +26,7 @@ const TABS = [
   { value: "info", label: "Info", icon: Info },
   { value: "3d-view", label: "3D View", icon: GanttChartSquare },
   { value: "2d-heatmap", label: "2D Heatmap", icon: Image },
+  { value: "report", label: "Report", icon: FileText },
   { value: "data-table", label: "Data Table", icon: Table },
 ]
 
@@ -125,9 +127,10 @@ export function MainApp() {
 
   const isDataLoaded = !!inspectionResult;
 
-  const getTabContentClass = (tabValue: string) => {
-    return activeTab === tabValue ? 'block h-full' : 'hidden';
-  };
+  const getTabContentStyle = (tabValue: string) => ({
+    display: activeTab === tabValue ? 'block' : 'none',
+    height: '100%',
+  });
   
   const threeDViewStyle: React.CSSProperties =
     activeTab === '3d-view'
@@ -146,7 +149,7 @@ export function MainApp() {
   return (
     <>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-grow flex flex-col p-4 md:p-6 gap-6">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
           {TABS.map(tab => (
             <TabsTrigger key={tab.value} value={tab.value} disabled={!isDataLoaded && tab.value !== 'setup'} className="flex-col sm:flex-row gap-2 h-14 sm:h-10">
               <tab.icon className="w-4 h-4"/>
@@ -156,21 +159,24 @@ export function MainApp() {
         </TabsList>
         
         <div className="flex-grow min-h-0 relative">
-            <div className={getTabContentClass('setup')}>
+            <div style={getTabContentStyle('setup')}>
               <SetupTab 
                 onFileProcess={handleFileProcess} 
                 isLoading={isLoading} 
                 onNominalThicknessChange={reprocessPlates}
               />
             </div>
-            <div className={getTabContentClass('info')}>
-              {isDataLoaded ? <InfoTab viewRef={threeDeeViewRef} /> : <DataPlaceholder />}
+            <div style={getTabContentStyle('info')}>
+              {isDataLoaded ? <InfoTab /> : <DataPlaceholder />}
             </div>
-            <div className={getTabContentClass('2d-heatmap')}>
+            <div style={getTabContentStyle('2d-heatmap')}>
               {isDataLoaded ? <TwoDeeHeatmapTab /> : <DataPlaceholder />}
             </div>
-            <div className={getTabContentClass('data-table')}>
+            <div style={getTabContentStyle('data-table')}>
               {isDataLoaded ? <DataTableTab /> : <DataPlaceholder />}
+            </div>
+             <div style={getTabContentStyle('report')}>
+              {isDataLoaded ? <ReportTab viewRef={threeDeeViewRef} /> : <DataPlaceholder />}
             </div>
             {/* Always mount 3D view but control visibility */}
             <div style={threeDViewStyle}>
