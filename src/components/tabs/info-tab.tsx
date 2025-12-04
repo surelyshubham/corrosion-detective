@@ -162,7 +162,7 @@ export function InfoTab() {
         setIsGeneratingScreenshots(false);
     }
   };
-
+  
   const handleGenerateFinalReport = async () => {
       if (!inspectionResult || !screenshotsReady || !reportMetadata) {
         toast({
