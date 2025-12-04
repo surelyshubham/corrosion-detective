@@ -22,6 +22,7 @@ import { Progress } from '../ui/progress'
 import { Slider } from '../ui/slider'
 import { Label } from '../ui/label'
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '../ui/tooltip'
+import type { ThreeDeeViewRef } from './three-dee-view-tab'
 
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
@@ -72,13 +73,15 @@ const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
   );
 };
 
-export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
+interface InfoTabProps {
+  viewRef: React.RefObject<ThreeDeeViewRef>;
+}
+
+export function InfoTab({ viewRef }: InfoTabProps) {
   const { inspectionResult } = useInspectionStore();
   const { toast } = useToast();
   
   const {
-    is3dViewReady,
-    captureFunctions,
     isGeneratingScreenshots,
     setIsGeneratingScreenshots,
     screenshotsReady,
@@ -99,6 +102,8 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
   
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
   const [isGeneratingFinalReport, setIsGeneratingFinalReport] = React.useState(false);
+  const captureFunctions = viewRef.current;
+  const is3dViewReady = !!captureFunctions?.capture;
 
   useEffect(() => {
     // Reset report state if inspection data changes
@@ -115,7 +120,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
 
 
   const handleGenerateScreenshots = async () => {
-    if (!inspectionResult || !captureFunctions?.isReady) {
+    if (!inspectionResult || !captureFunctions || !is3dViewReady) {
       toast({
         variant: "destructive",
         title: "3D Engine Not Ready",
@@ -125,10 +130,9 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
     }
     
     setIsGeneratingScreenshots(true);
-    setCaptureProgress({ current: 0, total: 1 }); // Initial progress
+    setCaptureProgress({ current: 0, total: 1 });
 
     try {
-      // The patches are already identified by the useEffect, just read them from the store.
       const identifiedPatches = patches; 
       const totalImages = 3 + (identifiedPatches.length * 2);
       setCaptureProgress({ current: 0, total: totalImages });
@@ -136,15 +140,13 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
       const capturedGlobalScreenshots: any = {};
       const capturedPatchScreenshots: Record<string, any> = {};
       
-      // Small delay to ensure the hidden 3D scene is responsive
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // 2. Capture Global Views
       const globalViews: ('iso' | 'top' | 'side')[] = ['iso', 'top', 'side'];
       for (const view of globalViews) {
         setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
         captureFunctions.setView(view);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera move and re-render
+        await new Promise(resolve => setTimeout(resolve, 500));
         const screenshot = captureFunctions.capture();
         if (screenshot) {
           capturedGlobalScreenshots[view] = screenshot;
@@ -153,24 +155,19 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
         }
       }
 
-      // 3. Capture patch screenshots
       for (const patch of identifiedPatches) {
-        // Focus on the patch
-        captureFunctions.focus(patch.center.x, patch.center.y, true); // Zoom in
+        captureFunctions.focus(patch.center.x, patch.center.y, true);
         
-        // Capture Iso view of patch
         setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
-        captureFunctions.setView('iso'); // ensure iso view
+        captureFunctions.setView('iso');
         await new Promise(resolve => setTimeout(resolve, 500));
         const isoScreenshot = captureFunctions.capture();
         
-        // Capture Top view of patch
         setCaptureProgress(prev => ({ current: (prev?.current ?? 0) + 1, total: totalImages }));
         captureFunctions.setView('top');
         await new Promise(resolve => setTimeout(resolve, 500));
         const topScreenshot = captureFunctions.capture();
         
-        // Reset camera after patch capture
         captureFunctions.resetCamera();
 
         if (isoScreenshot && topScreenshot) {
@@ -180,7 +177,6 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
       
       captureFunctions.resetCamera();
 
-      // 4. Store results in state
       setScreenshotData({
         global: capturedGlobalScreenshots,
         patches: capturedPatchScreenshots,
@@ -198,7 +194,7 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
         title: "Screenshot Generation Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred.",
       });
-      resetReportState(); // Reset on failure
+      resetReportState();
     } finally {
         setIsGeneratingScreenshots(false);
         setCaptureProgress(null);
@@ -216,7 +212,6 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
       }
       setIsGeneratingFinalReport(true);
       try {
-        // 1. Generate AI summaries
         const overallSummary = await generateReportSummary(inspectionResult, patches, defectThreshold);
 
         let patchSummaries: Record<string, string> = {};
@@ -248,7 +243,6 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
           });
         }
 
-        // 2. Assemble report data
         const reportData: AIReportData = {
             metadata: { ...reportMetadata, defectThreshold },
             inspection: inspectionResult,
@@ -262,7 +256,6 @@ export function InfoTab({ setActiveTab }: { setActiveTab: (tab: string) => void 
                 patches: patchSummaries,
             }
         };
-        // 3. Generate PDF
         await generateAIReport(reportData);
 
       } catch (error) {

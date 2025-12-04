@@ -3,25 +3,7 @@ import { create } from 'zustand';
 import type { IdentifiedPatch } from '@/reporting/patch-detector';
 import type { ReportMetadata } from '@/lib/types';
 
-type CaptureFunctions = {
-  capture: () => string;
-  focus: (x: number, y: number, zoomIn: boolean) => void;
-  resetCamera: () => void;
-  setView: (view: 'iso' | 'top' | 'side') => void;
-};
-
 interface ReportState {
-  // 3D View readiness
-  captureFunctions: CaptureFunctions | null;
-  is3dViewReady: boolean;
-  setCaptureFunctions: (functions: { 
-    capture: () => string; 
-    focus: (x: number, y: number, zoomIn: boolean) => void; 
-    resetCamera: () => void;
-    setView: (view: 'iso' | 'top' | 'side') => void;
-    isReady: boolean 
-  }) => void;
-  
   // Step 0: Configuration
   defectThreshold: number;
   setDefectThreshold: (threshold: number) => void;
@@ -53,8 +35,6 @@ interface ReportState {
 }
 
 const initialState = {
-  captureFunctions: null,
-  is3dViewReady: false,
   defectThreshold: 50,
   isGeneratingScreenshots: false,
   screenshotsReady: false,
@@ -69,15 +49,6 @@ const initialState = {
 export const useReportStore = create<ReportState>()(
   (set) => ({
     ...initialState,
-    setCaptureFunctions: (functions) => set({ 
-      captureFunctions: { 
-        capture: functions.capture, 
-        focus: functions.focus, 
-        resetCamera: functions.resetCamera,
-        setView: functions.setView,
-      },
-      is3dViewReady: functions.isReady 
-    }),
     setDefectThreshold: (threshold) => set({ defectThreshold: threshold }),
     setIsGeneratingScreenshots: (isGenerating) => set({ isGeneratingScreenshots: isGenerating }),
     setPatches: (patches) => set({ patches }),

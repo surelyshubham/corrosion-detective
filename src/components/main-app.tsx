@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect, useRef } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { useInspectionStore } from "@/store/use-inspection-store"
@@ -9,6 +9,7 @@ import { parseExcel } from "@/lib/excel-parser"
 import { processData } from "@/lib/data-processor"
 import { generateCorrosionInsight } from "@/ai/flows/generate-corrosion-insight"
 import type { AssetType, Plate } from "@/lib/types"
+import type { ThreeDeeViewRef } from "./tabs/three-dee-view-tab"
 
 import { SetupTab } from "./tabs/setup-tab"
 import { InfoTab } from "./tabs/info-tab"
@@ -17,6 +18,7 @@ import { TwoDeeHeatmapTab } from "./tabs/two-dee-heatmap-tab"
 import { ThreeDeeViewTab } from "./tabs/three-dee-view-tab"
 import { FileUp, GanttChartSquare, Image, Info, Table, BrainCircuit } from "lucide-react"
 import { Card, CardContent } from "./ui/card"
+
 
 const TABS = [
   { value: "setup", label: "Setup", icon: FileUp },
@@ -30,6 +32,7 @@ export function MainApp() {
   const { toast } = useToast()
   const { inspectionResult, addPlate, setIsLoading, isLoading, updateAIInsight, reprocessPlates } = useInspectionStore()
   const [activeTab, setActiveTab] = useState("setup")
+  const threeDeeViewRef = useRef<ThreeDeeViewRef>(null);
 
   const handleFileProcess = useCallback(
     async (file: File, assetType: AssetType, nominalThickness: number, options: {
@@ -143,11 +146,10 @@ export function MainApp() {
             />
           </TabsContent>
           <TabsContent value="info" className="h-full">
-            {isDataLoaded ? <InfoTab setActiveTab={setActiveTab} /> : <DataPlaceholder />}
+            {isDataLoaded ? <InfoTab viewRef={threeDeeViewRef} /> : <DataPlaceholder />}
           </TabsContent>
           <TabsContent value="3d-view" className="h-full">
-            {/* The 3D view is now rendered in the hidden container below */}
-            {isDataLoaded ? <ThreeDeeViewTab /> : <DataPlaceholder />}
+            {isDataLoaded ? <ThreeDeeViewTab ref={threeDeeViewRef} /> : <DataPlaceholder />}
           </TabsContent>
           <TabsContent value="2d-heatmap" className="h-full">
             {isDataLoaded ? <TwoDeeHeatmapTab /> : <DataPlaceholder />}
@@ -157,22 +159,6 @@ export function MainApp() {
           </TabsContent>
         </div>
       </Tabs>
-
-      {/* Hidden container for the always-mounted 3D view */}
-      {isDataLoaded && (
-        <div style={{
-            position: 'fixed',
-            left: '0px',
-            top: '0px',
-            width: '800px',
-            height: '600px',
-            opacity: 0,
-            pointerEvents: 'none',
-            zIndex: -1,
-        }}>
-            <ThreeDeeViewTab />
-        </div>
-      )}
     </>
   )
 }
