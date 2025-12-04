@@ -259,6 +259,7 @@ export function TankView3D() {
     
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide });
     meshRef.current = new THREE.Mesh(geometry, material);
+    meshRef.current.rotation.z = -Math.PI / 2; // Make it horizontal
     sceneRef.current.add(meshRef.current);
 
     // --- Create Caps ---
@@ -273,6 +274,7 @@ export function TankView3D() {
     bottomCap.rotation.x = Math.PI / 2;
     capsGroupRef.current.add(topCap);
     capsGroupRef.current.add(bottomCap);
+    capsGroupRef.current.rotation.z = -Math.PI / 2; // Make it horizontal
     sceneRef.current.add(capsGroupRef.current);
     // --- End Caps ---
 
@@ -457,3 +459,5 @@ export function TankView3D() {
     </div>
   )
 }
+
+    
