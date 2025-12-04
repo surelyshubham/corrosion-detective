@@ -17,7 +17,6 @@ import { cn } from '@/lib/utils'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { useReportStore } from '@/store/use-report-store'
 import { generateAIReport, type AIReportData } from '@/reporting/AIReportGenerator'
-import { identifyPatches, type IdentifiedPatch } from '@/reporting/patch-detector'
 import { generateReportSummary } from '@/ai/flows/generate-report-summary'
 import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import { useToast } from '@/hooks/use-toast'
@@ -42,7 +41,7 @@ interface AIReportDialogProps {
 
 export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   const { inspectionResult } = useInspectionStore()
-  const { captureFunctions, isReady } = useReportStore()
+  const { patches, overviewScreenshot, patchScreenshots } = useReportStore()
   const [isGenerating, setIsGenerating] = useState(false)
   const { toast } = useToast()
   
@@ -82,45 +81,25 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
   })
 
   const onSubmit = async (data: ReportFormValues) => {
-    if (!inspectionResult || !captureFunctions?.capture || !isReady) {
+    if (!inspectionResult || !overviewScreenshot) {
       toast({
         variant: "destructive",
         title: "Report Generation Error",
-        description: "The 3D view is not ready or data is missing.",
+        description: "Screenshots not generated – capture view before exporting report.",
       });
       return;
     }
     setIsGenerating(true)
 
     try {
-        // 1. Identify defect patches
-        const patches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
-
-        // 2. Capture screenshots
-        if (captureFunctions.resetCamera) captureFunctions.resetCamera();
-        await new Promise(resolve => setTimeout(resolve, 500)); // wait for camera
-        const overviewScreenshot = captureFunctions.capture();
-
-        const patchScreenshots: Record<string, string> = {};
-        for (const patch of patches) {
-            if (captureFunctions.focus) {
-                captureFunctions.focus(patch.center.x, patch.center.y);
-                await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera to move
-            }
-            const screenshot = captureFunctions.capture();
-            if (screenshot) {
-                patchScreenshots[patch.id] = screenshot;
-            }
-        }
-        
-        // 3. Generate AI summaries
+        // 1. Generate AI summaries
         const overallSummary = await generateReportSummary(inspectionResult, patches);
         const patchSummaries: Record<string, string> = {};
         for (const patch of patches) {
              patchSummaries[patch.id] = await generatePatchSummary(patch, inspectionResult.nominalThickness, inspectionResult.assetType);
         }
 
-        // 4. Assemble report data
+        // 2. Assemble report data
         const reportData: AIReportData = {
             metadata: {
               ...data,
@@ -143,7 +122,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
             }
         };
 
-        // 5. Generate PDF
+        // 3. Generate PDF
         await generateAIReport(reportData);
         onOpenChange(false);
     } catch (error) {
@@ -248,7 +227,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>Cancel</Button>
-            <Button type="submit" disabled={isGenerating || !isReady}>
+            <Button type="submit" disabled={isGenerating}>
               {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isGenerating ? 'Generating...' : 'Generate & Download'}
             </Button>

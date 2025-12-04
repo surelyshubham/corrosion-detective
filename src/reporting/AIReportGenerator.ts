@@ -1,7 +1,6 @@
-
 import { PDFDocument, rgb, StandardFonts, PageSizes, PDFFont } from 'pdf-lib';
 import { downloadFile } from '@/lib/utils';
-import type { MergedInspectionResult, ReportMetadata } from '@/lib/types';
+import type { MergedInspectionResult, ReportMetadata, MergedCell } from '@/lib/types';
 import { format } from 'date-fns';
 import { IdentifiedPatch } from './patch-detector';
 
@@ -29,12 +28,12 @@ let helveticaBoldFont: PDFFont;
 
 // Helper function for text wrapping
 function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
-    const words = text.replace(/\n/g, ' \n ').split(' ');
+    const words = text.replace(/\\n/g, ' \\n ').split(' ');
     const lines: string[] = [];
     let currentLine = '';
 
     for (const word of words) {
-        if (word === '\n') {
+        if (word === '\\n') {
             lines.push(currentLine);
             currentLine = '';
             continue;
@@ -92,6 +91,12 @@ function drawField(page: any, y: number, label: string, value: string) {
     return y - 20;
 }
 
+function getLoss(cell: MergedCell | null, nominal: number) {
+    if (cell?.effectiveThickness === null || cell?.effectiveThickness === undefined) return null;
+    return nominal - cell.effectiveThickness;
+}
+
+
 export async function generateAIReport(data: AIReportData) {
   const pdfDoc = await PDFDocument.create();
   helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -119,11 +124,17 @@ export async function generateAIReport(data: AIReportData) {
   y -= 10;
   
   // AI Summary
-  const textLines = wrapText(data.summaries.overall, helveticaFont, 11, width - 100);
-  for (const line of textLines) {
-    page.drawText(line, { x: 50, y, font: helveticaFont, size: 11, color: THEME_TEXT });
-    y -= 15;
+  if (data.patches.length === 0) {
+      page.drawText("No critical corrosion areas detected below 20% remaining wall thickness.", { x: 50, y, font: helveticaFont, size: 11, color: THEME_TEXT });
+      y-=15;
+  } else {
+    const textLines = wrapText(data.summaries.overall, helveticaFont, 11, width - 100);
+    for (const line of textLines) {
+        page.drawText(line, { x: 50, y, font: helveticaFont, size: 11, color: THEME_TEXT });
+        y -= 15;
+    }
   }
+
   y -= 15;
 
   // Overview Screenshot
@@ -147,12 +158,21 @@ export async function generateAIReport(data: AIReportData) {
     
     y = drawSectionHeader(page, y, `Critical Defect Patch Summary (<20% Remaining Wall)`);
 
-    const tableHeaders = ['Patch ID', 'Min Thk (mm)', 'Avg Thk (mm)', 'Area (mm²)', 'X Range', 'Y Range'];
-    const colWidths = [60, 80, 80, 80, 100, 100];
+    const tableHeaders = ['Patch ID', 'Min Thk (mm)', 'Avg Thk (mm)', '%', 'Loss', 'X Range', 'Y Range', 'Size'];
+    const colWidths = [50, 70, 70, 40, 50, 80, 80, 70];
     let currentX = 50;
     
+    page.drawRectangle({
+        x: 45,
+        y: y - 5,
+        width: colWidths.reduce((a,b) => a + b, 5),
+        height: 20,
+        color: THEME_PRIMARY,
+        opacity: 0.1,
+    });
+    
     tableHeaders.forEach((header, i) => {
-        page.drawText(header, { x: currentX, y, font: helveticaBoldFont, size: 9 });
+        page.drawText(header, { x: currentX, y, font: helveticaBoldFont, size: 9, color: THEME_TEXT });
         currentX += colWidths[i];
     });
     y -= 20;
@@ -165,13 +185,18 @@ export async function generateAIReport(data: AIReportData) {
             y = height - 100;
         }
         currentX = 50;
+        const loss = data.inspection.nominalThickness - patch.minThickness;
+        const percentage = (patch.minThickness / data.inspection.nominalThickness) * 100;
+
         const row = [
             patch.id,
             patch.minThickness.toFixed(2),
             patch.avgThickness.toFixed(2),
-            patch.boundingBox.toFixed(0),
+            percentage.toFixed(1),
+            loss.toFixed(2),
             `${patch.coordinates.xMin}-${patch.coordinates.xMax}`,
             `${patch.coordinates.yMin}-${patch.coordinates.yMax}`,
+            patch.boundingBox.toFixed(0),
         ];
         row.forEach((cell, i) => {
             page.drawText(String(cell), { x: currentX, y, font: helveticaFont, size: 9 });
@@ -236,7 +261,7 @@ export async function generateAIReport(data: AIReportData) {
    }
 
 
-  // --- FINAL PAGE: REMARKS ---
+  // --- FINAL PAGE: REMARKS & SIGNATURE ---
   page = pdfDoc.addPage(PageSizes.A4);
   ({ width, height } = page.getSize());
   await drawHeader(page, data);
@@ -253,7 +278,7 @@ export async function generateAIReport(data: AIReportData) {
   } else {
     page.drawText('No remarks provided.', { x: 50, y, font: helveticaFont, size: 11, color: THEME_MUTED });
   }
-
+  
   y = 150;
   page.drawText('Operator Signature:', { x: 50, y, font: helveticaBoldFont, size: 11 });
   page.drawLine({ start: { x: 180, y: y - 2 }, end: { x: 380, y: y - 2 }, thickness: 0.5, color: THEME_TEXT });
@@ -261,5 +286,5 @@ export async function generateAIReport(data: AIReportData) {
 
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-  downloadFile(blob, `AI_Report_${data.metadata.assetName || 'Asset'}.pdf`);
+  downloadFile(blob, `AI_Report_${data.metadata.assetName?.replace(/ /g,"_") || 'Asset'}.pdf`);
 }

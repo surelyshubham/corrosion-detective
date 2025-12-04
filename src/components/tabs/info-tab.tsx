@@ -6,11 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { getConditionClass } from '@/lib/utils'
-import { BrainCircuit, Loader2, Layers, FileText } from 'lucide-react'
+import { BrainCircuit, Loader2, Layers, FileText, Camera } from 'lucide-react'
 import { ScrollArea } from '../ui/scroll-area'
 import type { Plate } from '@/lib/types'
 import { Button } from '../ui/button'
 import { AIReportDialog } from '../reporting/AIReportDialog'
+import { useReportStore } from '@/store/use-report-store'
+import { useToast } from '@/hooks/use-toast'
+import { identifyPatches } from '@/reporting/patch-detector'
+
 
 const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
   const stats = plate.stats
@@ -62,8 +66,85 @@ const PlateStatsCard = ({ plate, index }: { plate: Plate; index: number }) => {
 
 
 export function InfoTab() {
-  const { inspectionResult } = useInspectionStore()
+  const { inspectionResult, setInspectionResult: clearInspection } = useInspectionStore();
+  const { toast } = useToast();
+  
+  const {
+    isReady: is3dViewReady,
+    captureFunctions,
+    isGeneratingScreenshots,
+    setIsGeneratingScreenshots,
+    screenshotsReady,
+    setScreenshotData,
+    resetReportState
+  } = useReportStore();
+  
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    // Reset report state if inspection data changes
+    resetReportState();
+  }, [inspectionResult, resetReportState]);
+
+  const handleGenerateScreenshots = async () => {
+    if (!inspectionResult || !captureFunctions?.capture || !is3dViewReady) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Generate Screenshots",
+        description: "The 3D view is not ready or data is missing.",
+      });
+      return;
+    }
+    setIsGeneratingScreenshots(true);
+
+    try {
+      // 1. Identify defect patches
+      const patches = identifyPatches(inspectionResult.mergedGrid, 20); // 20% threshold
+      
+      // 2. Capture overview screenshot
+      if (captureFunctions.resetCamera) captureFunctions.resetCamera();
+      await new Promise(resolve => setTimeout(resolve, 500)); // wait for camera
+      const overviewScreenshot = captureFunctions.capture();
+
+      if (!overviewScreenshot) {
+         throw new Error("Failed to capture the main overview screenshot.");
+      }
+
+      // 3. Capture patch screenshots
+      const patchScreenshots: Record<string, string> = {};
+      for (const patch of patches) {
+        if (captureFunctions.focus) {
+          captureFunctions.focus(patch.center.x, patch.center.y);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait for camera to move
+        }
+        const screenshot = captureFunctions.capture();
+        if (screenshot) {
+          patchScreenshots[patch.id] = screenshot;
+        }
+      }
+
+      // 4. Store results in state
+      setScreenshotData({
+        overview: overviewScreenshot,
+        patches: patchScreenshots,
+        patchData: patches,
+      });
+
+      toast({
+        title: "Screenshots Generated",
+        description: `Captured ${patches.length + 1} images. You can now generate the report.`,
+      });
+
+    } catch (error) {
+      console.error("Failed to generate screenshots", error);
+      toast({
+        variant: "destructive",
+        title: "Screenshot Generation Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred.",
+      });
+      setIsGeneratingScreenshots(false);
+    }
+  };
 
 
   if (!inspectionResult) return null
@@ -193,9 +274,22 @@ export function InfoTab() {
                   Reporting
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <Button className="w-full" onClick={() => setIsReportDialogOpen(true)}>
-                  Generate AI Report
+              <CardContent className="flex flex-col gap-4">
+                <Button 
+                  className="w-full" 
+                  onClick={handleGenerateScreenshots}
+                  disabled={isGeneratingScreenshots || screenshotsReady || !is3dViewReady}
+                >
+                  {isGeneratingScreenshots ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2" />}
+                  {isGeneratingScreenshots ? 'Generating...' : (screenshotsReady ? 'Screenshots Ready' : '1. Generate Screenshots')}
+                </Button>
+
+                <Button 
+                  className="w-full" 
+                  onClick={() => setIsReportDialogOpen(true)}
+                  disabled={!screenshotsReady}
+                >
+                  2. Generate Report
                 </Button>
               </CardContent>
             </Card>
