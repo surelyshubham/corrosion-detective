@@ -148,7 +148,8 @@ export function InfoTab() {
         title: "Screenshot Generation Failed",
         description: error instanceof Error ? error.message : "An unknown error occurred.",
       });
-      setIsGeneratingScreenshots(false);
+    } finally {
+        setIsGeneratingScreenshots(false);
     }
   };
 
@@ -284,7 +285,7 @@ export function InfoTab() {
                 <Button 
                   className="w-full" 
                   onClick={handleGenerateScreenshots}
-                  disabled={isGeneratingScreenshots || screenshotsReady || !is3dViewReady}
+                  disabled={!is3dViewReady || isGeneratingScreenshots || screenshotsReady}
                 >
                   {isGeneratingScreenshots ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2" />}
                   {isGeneratingScreenshots ? 'Generating...' : (screenshotsReady ? 'Screenshots Ready' : '1. Generate Screenshots')}
