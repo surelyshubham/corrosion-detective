@@ -18,7 +18,6 @@ import { useInspectionStore } from '@/store/use-inspection-store'
 import { useReportStore } from '@/store/use-report-store'
 import { generateAIReport, type AIReportData } from '@/reporting/AIReportGenerator'
 import { identifyPatches, type IdentifiedPatch } from '@/reporting/patch-detector'
-import type { ReportMetadata } from '@/lib/types'
 import { generateReportSummary } from '@/ai/flows/generate-report-summary'
 import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import { useToast } from '@/hooks/use-toast'
@@ -52,13 +51,23 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
     const dateMeta = inspectionResult.plates[0].metadata.find(m => String(m[0]).toLowerCase().includes('date'));
     if (!dateMeta || !dateMeta[1]) return undefined;
 
+    // Handle Excel's numeric date format
     if (typeof dateMeta[1] === 'number') {
-      return new Date(Date.UTC(1899, 11, 30 + dateMeta[1]));
+        // Excel's epoch starts on 1900-01-01, but it incorrectly thinks 1900 is a leap year.
+        // The adjustment is to subtract 1 day for dates after 1900-02-28.
+        // Javascript's epoch is 1970-01-01. The difference is 25569 days.
+        return new Date((dateMeta[1] - 25569) * 86400 * 1000);
     }
-    const parsedDate = new Date(dateMeta[1]);
-    if (!isNaN(parsedDate.getTime()) && String(dateMeta[1]).length > 5) {
+    
+    // Handle string dates (and try to be robust)
+    const dateString = String(dateMeta[1]);
+    if (dateString.length < 6) return undefined;
+    
+    const parsedDate = new Date(dateString);
+    if (!isNaN(parsedDate.getTime())) {
       return parsedDate;
     }
+
     return undefined;
   }, [inspectionResult]);
 
@@ -241,7 +250,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>Cancel</Button>
             <Button type="submit" disabled={isGenerating || !isReady}>
               {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isGenerating ? 'Generating...' : 'Generate AI Report'}
+              {isGenerating ? 'Generating...' : 'Generate & Download'}
             </Button>
           </DialogFooter>
         </form>

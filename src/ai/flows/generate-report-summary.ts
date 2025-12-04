@@ -4,13 +4,18 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import type { MergedInspectionResult } from '@/lib/types';
 import type { IdentifiedPatch } from '@/reporting/patch-detector';
 
 const ReportSummaryInputSchema = z.object({
-  inspection: z.any().describe('The main inspection result object, containing overall stats.'),
-  patches: z.array(z.any()).describe('An array of all identified critical corrosion patches.'),
+  assetType: z.string(),
+  nominalThickness: z.number(),
+  minThickness: z.string(),
+  minPercentage: z.string(),
+  scannedArea: z.string(),
+  patchCount: z.number(),
+  overallCondition: z.string(),
 });
 
 const ReportSummaryOutputSchema = z.object({
@@ -18,7 +23,16 @@ const ReportSummaryOutputSchema = z.object({
 });
 
 export async function generateReportSummary(inspection: MergedInspectionResult, patches: IdentifiedPatch[]): Promise<string> {
-  const result = await reportSummaryFlow({ inspection, patches });
+  const input = {
+      assetType: inspection.assetType,
+      nominalThickness: inspection.nominalThickness,
+      minThickness: inspection.stats.minThickness.toFixed(2),
+      minPercentage: inspection.stats.minPercentage.toFixed(1),
+      scannedArea: inspection.stats.scannedArea.toFixed(2),
+      patchCount: patches.length,
+      overallCondition: inspection.condition,
+  };
+  const result = await reportSummaryFlow(input);
   return result.summary;
 }
 
@@ -31,15 +45,15 @@ const prompt = ai.definePrompt({
 Focus on the overall condition, the number of critical findings, and the most severe reading. Do not go into extreme detail on each patch, as that will be covered later.
 
 Data:
-- Asset Type: {{inspection.assetType}}
-- Nominal Thickness: {{inspection.nominalThickness}}mm
-- Minimum Thickness Found: {{inspection.stats.minThickness}}mm ({{inspection.stats.minPercentage.toFixed(1)}}% of nominal)
-- Total Scanned Area: {{inspection.stats.scannedArea.toFixed(2)}} m²
-- Number of Critical Defect Patches (<20%): {{patches.length}}
-- Overall Condition Assessment: {{inspection.condition}}
+- Asset Type: {{assetType}}
+- Nominal Thickness: {{nominalThickness}}mm
+- Minimum Thickness Found: {{minThickness}}mm ({{minPercentage}}% of nominal)
+- Total Scanned Area: {{scannedArea}} m²
+- Number of Critical Defect Patches (<20%): {{patchCount}}
+- Overall Condition Assessment: {{overallCondition}}
 
 Generate a concise summary suitable for a customer report.
-Example: "The inspection of the {{inspection.assetType}} revealed a total of {{patches.length}} critical corrosion patches with wall thickness below 20% of nominal. The most severe finding was a measurement of {{inspection.stats.minThickness.toFixed(2)}}mm. The overall condition is rated as {{inspection.condition}}."
+Example: "The inspection of the {{assetType}} revealed a total of {{patchCount}} critical corrosion patches with wall thickness below 20% of nominal. The most severe finding was a measurement of {{minThickness}}mm. The overall condition is rated as {{overallCondition}}."
 `,
 });
 

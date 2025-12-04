@@ -5,20 +5,45 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import type { IdentifiedPatch } from '@/reporting/patch-detector';
 
 const PatchSummaryInputSchema = z.object({
-    patch: z.any().describe('The corrosion patch object with stats like min/avg thickness, bounding box, etc.'),
+    patchId: z.number().describe('The ID of the corrosion patch.'),
+    xMin: z.number(),
+    xMax: z.number(),
+    yMin: z.number(),
+    yMax: z.number(),
+    patchArea: z.string(),
+    minThickness: z.string(),
+    avgThickness: z.string(),
+    severity: z.string(),
     nominalThickness: z.number().describe('The nominal thickness of the asset in mm.'),
     assetType: z.string().describe('The type of asset, e.g., "Pipe" or "Tank".')
 });
+
 
 const PatchSummaryOutputSchema = z.object({
   summary: z.string().describe('A concise, professional summary of the patch condition, location, severity, and a recommendation. Use NDT-style language.')
 });
 
-export async function generatePatchSummary(patch: IdentifiedPatch, nominalThickness: number, assetType: string): Promise<string> {
-    const result = await patchSummaryFlow({ patch, nominalThickness, assetType });
+export async function generatePatchSummary(
+    patch: any, 
+    nominalThickness: number, 
+    assetType: string
+): Promise<string> {
+    const input = {
+        patchId: patch.id,
+        xMin: patch.coordinates.xMin,
+        xMax: patch.coordinates.xMax,
+        yMin: patch.coordinates.yMin,
+        yMax: patch.coordinates.yMax,
+        patchArea: patch.boundingBox.toFixed(0),
+        minThickness: patch.minThickness.toFixed(2),
+        avgThickness: patch.avgThickness.toFixed(2),
+        severity: patch.severity,
+        nominalThickness,
+        assetType,
+    };
+    const result = await patchSummaryFlow(input);
     return result.summary;
 }
 
@@ -30,17 +55,17 @@ const prompt = ai.definePrompt({
 Focus on corrosion severity, remaining thickness, patch location, and a clear recommendation. Use professional, direct NDT-style language.
 
 Example Output:
-"Corrosion Patch #{{patch.id}} shows significant localized thinning around X={{patch.coordinates.xMin}}-{{patch.coordinates.xMax}} / Y={{patch.coordinates.yMin}}-{{patch.coordinates.yMax}}. Minimum thickness is {{patch.minThickness.toFixed(2)}}mm. Recommended immediate localized repair and monitoring."
+"Corrosion Patch #{{patchId}} shows significant localized thinning around X={{xMin}}-{{xMax}} / Y={{yMin}}-{{yMax}}. Minimum thickness is {{minThickness}}mm. Recommended immediate localized repair and monitoring."
 
 Data:
-- Patch ID: {{patch.id}}
+- Patch ID: {{patchId}}
 - Asset Type: {{{assetType}}}
 - Nominal Thickness: {{{nominalThickness}}}mm
-- Patch Bounding Box: X={{patch.coordinates.xMin}}-{{patch.coordinates.xMax}}, Y={{patch.coordinates.yMin}}-{{patch.coordinates.yMax}}
-- Patch Area: {{patch.boundingBox}}mm²
-- Minimum Thickness in Patch: {{patch.minThickness.toFixed(2)}}mm
-- Average Thickness in Patch: {{patch.avgThickness.toFixed(2)}}mm
-- Severity: {{patch.severity}}
+- Patch Bounding Box: X={{xMin}}-{{xMax}}, Y={{yMin}}-{{yMax}}
+- Patch Area: {{patchArea}}mm²
+- Minimum Thickness in Patch: {{minThickness}}mm
+- Average Thickness in Patch: {{avgThickness}}mm
+- Severity: {{severity}}
 
 Generate the summary now.`,
 });
