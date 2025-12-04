@@ -1,3 +1,4 @@
+
 import { PDFDocument, rgb, StandardFonts, PageSizes } from 'pdf-lib';
 import { downloadFile } from '@/lib/utils';
 import type { MergedInspectionResult, ReportMetadata, Defect } from '@/lib/types';
@@ -104,7 +105,7 @@ export async function generateInspectionReport(data: ReportData) {
   });
   y -= (overviewDims.height + 20);
 
-  const summaryParagraph = `The inspection produced ${data.inspection.stats.totalPoints.toLocaleString()} valid measurement points. ${data.defects.length} points were classified as a defect (<20% remaining wall).`;
+  const summaryParagraph = `The inspection produced ${data.inspection.stats.totalPoints.toLocaleString()} valid measurement points. ${data.defects.length} points were classified as a defect (<80% remaining wall).`;
   page.drawText(summaryParagraph, { x: 60, y, font: helveticaFont, size: 11, color: THEME_TEXT, maxWidth: width - 120, lineHeight: 15 });
 
   // --- PAGE 3: DEFECT TABLE ---
@@ -113,7 +114,7 @@ export async function generateInspectionReport(data: ReportData) {
     await drawHeader(page, width, data);
     y = height - 120;
     
-    page.drawText('Defect Summary (Wall < 20%)', { x: 50, y, font: helveticaBoldFont, size: 16 });
+    page.drawText('Defect Summary (Wall < 80%)', { x: 50, y, font: helveticaBoldFont, size: 16 });
     y -= 30;
 
     const tableHeaders = ['X', 'Y', 'Raw (mm)', 'Eff (mm)', 'Loss (mm)', '% Rem.'];
