@@ -228,7 +228,7 @@ export function SetupTab({ onFileProcess, isLoading, onNominalThicknessChange }:
             {(selectedAssetType === 'Pipe' || selectedAssetType === 'Tank' || selectedAssetType === 'Vessel') && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="pipeOuterDiameter">Outer Diameter (mm)</Label>
+                  <Label htmlFor="pipeOuterDiameter">{selectedAssetType} Diameter (mm)</Label>
                   <Controller
                     name="pipeOuterDiameter"
                     control={control}
@@ -239,7 +239,7 @@ export function SetupTab({ onFileProcess, isLoading, onNominalThicknessChange }:
                   {errors.pipeOuterDiameter && <p className="text-sm text-destructive col-span-2">{errors.pipeOuterDiameter.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="pipeLength">Length / Height (mm)</Label>
+                  <Label htmlFor="pipeLength">{selectedAssetType === 'Pipe' ? 'Length' : 'Height'} (mm)</Label>
                   <Controller
                     name="pipeLength"
                     control={control}
