@@ -1,7 +1,7 @@
 
 "use client"
 
-import React, { useRef } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { useInspectionStore } from '@/store/use-inspection-store';
 import { PlateView3D, type PlateView3DRef } from '@/components/visualizations/PlateView3D';
 import { PipeView3D, type PipeView3DRef } from '@/components/visualizations/PipeView3D';
@@ -16,21 +16,13 @@ export function ThreeDeeViewTab() {
   const pipeRef = useRef<PipeView3DRef>(null);
   const tankRef = useRef<TankView3DRef>(null);
 
-  React.useEffect(() => {
-    if (!inspectionResult) {
-       setCaptureFunctions({ capture: () => '', focus: () => {}, isReady: false });
-       return;
-    }
-
-    const { assetType } = inspectionResult;
-    let functions: { capture: () => string; focus: (x: number, y: number) => void; isReady: boolean };
-
+  const handleReady = useCallback((assetType: 'Plate' | 'Pipe' | 'Tank' | 'Vessel') => {
+    let functions: { capture: () => string; focus: (x: number, y: number) => void; };
     switch (assetType) {
       case 'Pipe':
         functions = {
           capture: () => pipeRef.current?.captureScreenshot() || '',
           focus: (x, y) => pipeRef.current?.focusOnPoint(x, y),
-          isReady: !!pipeRef.current,
         };
         break;
       case 'Tank':
@@ -38,7 +30,6 @@ export function ThreeDeeViewTab() {
         functions = {
           capture: () => tankRef.current?.captureScreenshot() || '',
           focus: (x, y) => tankRef.current?.focusOnPoint(x, y),
-          isReady: !!tankRef.current,
         };
         break;
       case 'Plate':
@@ -46,12 +37,20 @@ export function ThreeDeeViewTab() {
         functions = {
           capture: () => plateRef.current?.captureScreenshot() || '',
           focus: (x, y) => plateRef.current?.focusOnPoint(x, y),
-          isReady: !!plateRef.current,
         };
         break;
     }
-    setCaptureFunctions(functions);
-  }, [inspectionResult, setCaptureFunctions, plateRef.current, pipeRef.current, tankRef.current]); // Add refs to dependency array
+    setCaptureFunctions({ ...functions, isReady: true });
+  }, [setCaptureFunctions]);
+
+
+  React.useEffect(() => {
+    // When the inspection result changes (e.g., cleared), reset the ready state.
+    if (!inspectionResult) {
+      setCaptureFunctions({ capture: () => '', focus: () => {}, isReady: false });
+    }
+  }, [inspectionResult, setCaptureFunctions]);
+
 
   if (!inspectionResult) return null;
 
@@ -59,12 +58,12 @@ export function ThreeDeeViewTab() {
 
   switch (assetType) {
     case 'Pipe':
-      return <PipeView3D ref={pipeRef}/>;
+      return <PipeView3D ref={pipeRef} onReady={() => handleReady('Pipe')}/>;
     case 'Tank':
     case 'Vessel':
-      return <TankView3D ref={tankRef}/>;
+      return <TankView3D ref={tankRef} onReady={() => handleReady('Tank')}/>;
     case 'Plate':
     default:
-      return <PlateView3D ref={plateRef}/>;
+      return <PlateView3D ref={plateRef} onReady={() => handleReady('Plate')}/>;
   }
 }

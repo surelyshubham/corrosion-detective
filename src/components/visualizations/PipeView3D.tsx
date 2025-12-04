@@ -95,8 +95,12 @@ export type PipeView3DRef = {
   focusOnPoint: (x: number, y: number) => void;
 };
 
+interface PipeView3DProps {
+  onReady?: () => void;
+}
 
-export const PipeView3D = React.forwardRef<PipeView3DRef>((props, ref) => {
+
+export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>(({ onReady }, ref) => {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15) // Represents radial exaggeration
@@ -341,6 +345,10 @@ export const PipeView3D = React.forwardRef<PipeView3DRef>((props, ref) => {
     currentMount.addEventListener('mousemove', onMouseMove);
     currentMount.addEventListener('click', onClick);
 
+    if (onReady) {
+      onReady();
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
       currentMount.removeEventListener('mousemove', onMouseMove);
@@ -462,3 +470,5 @@ export const PipeView3D = React.forwardRef<PipeView3DRef>((props, ref) => {
 });
 
 PipeView3D.displayName = "PipeView3D";
+
+    

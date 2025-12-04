@@ -114,15 +114,19 @@ export type PlateView3DRef = {
   focusOnPoint: (x: number, y: number) => void;
 };
 
+interface PlateView3DProps {
+  onReady?: () => void;
+}
 
-export const PlateView3D = React.forwardRef<PlateView3DRef>((props, ref) => {
+
+export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>(({ onReady }, ref) => {
   const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15)
   const [showReference, setShowReference] = useState(false)
   const [showMinMax, setShowMinMax] = useState(true)
   const [showOrigin, setShowOrigin] = useState(true)
-  const [hoveredPoint, setHoveredPoint] = useState<any>(null)
+  const [hoveredPoint, setHoveredPoint] = useState<any>(null);
   
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -441,6 +445,10 @@ export const PlateView3D = React.forwardRef<PlateView3DRef>((props, ref) => {
     currentMount.addEventListener('mousemove', onMouseMove);
     currentMount.addEventListener('click', onClick);
 
+    if (onReady) {
+      onReady();
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
       currentMount.removeEventListener('mousemove', onMouseMove);
@@ -573,5 +581,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef>((props, ref) => {
   )
 });
 PlateView3D.displayName = "PlateView3D";
+
+    
 
     
