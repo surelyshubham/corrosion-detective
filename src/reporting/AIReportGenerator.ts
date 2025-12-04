@@ -1,4 +1,5 @@
-import { PDFDocument, rgb, StandardFonts, PageSizes } from 'pdf-lib';
+
+import { PDFDocument, rgb, StandardFonts, PageSizes, PDFFont } from 'pdf-lib';
 import { downloadFile } from '@/lib/utils';
 import type { MergedInspectionResult, ReportMetadata } from '@/lib/types';
 import { format } from 'date-fns';
@@ -23,8 +24,37 @@ const THEME_TEXT = rgb(0.1, 0.1, 0.1);
 const THEME_MUTED = rgb(0.4, 0.4, 0.4);
 const THEME_BG = rgb(0.95, 0.96, 0.98);
 
-let helveticaFont: any;
-let helveticaBoldFont: any;
+let helveticaFont: PDFFont;
+let helveticaBoldFont: PDFFont;
+
+// Helper function for text wrapping
+function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+    const words = text.replace(/\n/g, ' \n ').split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+        if (word === '\n') {
+            lines.push(currentLine);
+            currentLine = '';
+            continue;
+        }
+        const testLine = currentLine === '' ? word : `${currentLine} ${word}`;
+        const width = font.widthOfTextAtSize(testLine, fontSize);
+
+        if (width < maxWidth) {
+            currentLine = testLine;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+    return lines;
+}
+
 
 async function drawHeader(page: any, data: AIReportData) {
     const { width } = page.getSize();
@@ -89,7 +119,7 @@ export async function generateAIReport(data: AIReportData) {
   y -= 10;
   
   // AI Summary
-  const textLines = helveticaFont.getLinesOfText(data.summaries.overall, { maxWidth: width - 100, size: 11 });
+  const textLines = wrapText(data.summaries.overall, helveticaFont, 11, width - 100);
   for (const line of textLines) {
     page.drawText(line, { x: 50, y, font: helveticaFont, size: 11, color: THEME_TEXT });
     y -= 15;
@@ -186,7 +216,7 @@ export async function generateAIReport(data: AIReportData) {
      y = drawSectionHeader(page, y, 'AI Analysis & Recommendation');
      const summary = data.summaries.patches[patch.id];
      if (summary) {
-        const summaryLines = helveticaFont.getLinesOfText(summary, { maxWidth: width - 100, size: 11 });
+        const summaryLines = wrapText(summary, helveticaFont, 11, width - 100);
         for (const line of summaryLines) {
             page.drawText(line, { x: 50, y, font: helveticaFont, size: 11, color: THEME_TEXT });
             y -= 15;
@@ -215,7 +245,7 @@ export async function generateAIReport(data: AIReportData) {
   y = drawSectionHeader(page, y, 'General Remarks');
   
   if (data.metadata.remarks && data.metadata.remarks !== 'N/A') {
-    const remarkLines = helveticaFont.getLinesOfText(data.metadata.remarks, { maxWidth: width - 100, size: 11 });
+    const remarkLines = wrapText(data.metadata.remarks, helveticaFont, 11, width - 100);
     for(const line of remarkLines) {
         page.drawText(line, { x: 50, y, font: helveticaFont, size: 11 });
         y -= 15;
