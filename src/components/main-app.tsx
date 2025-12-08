@@ -37,14 +37,21 @@ export function MainApp() {
 
   // Effect to automatically switch tabs after processing
   useEffect(() => {
-    if (inspectionResult && activeTab === 'setup' && !isLoading) {
-      setActiveTab("info");
-      toast({
-        title: "Processing Complete",
-        description: `Data has been successfully processed and loaded.`,
-      })
+    if (inspectionResult && !isLoading) {
+      if (inspectionResult.plates.length === 1 && activeTab === 'setup') {
+         setActiveTab("info");
+         toast({
+            title: "Processing Complete",
+            description: `Data has been successfully processed and loaded.`,
+          })
+      } else if (inspectionResult.plates.length > 1) {
+          toast({
+            title: "Merge Complete",
+            description: `Successfully merged ${inspectionResult.plates.length} plates.`,
+          })
+      }
     }
-  }, [inspectionResult, activeTab, isLoading, toast]);
+  }, [inspectionResult, isLoading, toast, activeTab]);
   
   // Temporarily disabled for rendering test
   // useEffect(() => {
@@ -167,3 +174,5 @@ const DataPlaceholder = () => (
         </CardContent>
     </Card>
 )
+
+    

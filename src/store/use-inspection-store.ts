@@ -14,7 +14,7 @@ export interface WorkerOutput {
   displacementBuffer?: Float32Array;
   colorBuffer?: Uint8Array;
   gridMatrix?: MergedGrid;
-  stats?: InspectionStats;
+  stats?: InspectionStats & { nominalThickness: number };
   condition?: MergedInspectionResult['condition'];
 }
 
@@ -74,12 +74,13 @@ export const useInspectionStore = create<InspectionState>()(
                 const currentResult = get().inspectionResult;
                 
                 const newResult: MergedInspectionResult = {
+                    ...currentResult,
                     plates: data.plates,
                     mergedGrid: data.gridMatrix,
                     nominalThickness: data.stats.nominalThickness,
                     stats: data.stats,
                     condition: data.condition,
-                    aiInsight: null,
+                    aiInsight: currentResult?.aiInsight || null, // Preserve existing AI insight if any
                     assetType: currentResult?.assetType || 'Plate',
                     pipeOuterDiameter: currentResult?.pipeOuterDiameter,
                     pipeLength: currentResult?.pipeLength
@@ -123,14 +124,20 @@ export const useInspectionStore = create<InspectionState>()(
 
         processFirstFile: async (file, nominalThickness, assetType, config) => {
             if (!worker) return;
-            set({ isLoading: true, loadingProgress: 0, error: null });
+            set({ isLoading: true, loadingProgress: 0, error: null, inspectionResult: null });
+             // Temporarily set a shell of the result so the UI can lock asset type etc.
              set({ 
                 inspectionResult: {
                     nominalThickness,
                     assetType,
                     pipeOuterDiameter: config.pipeOuterDiameter,
                     pipeLength: config.pipeLength,
-                } as any,
+                    plates: [],
+                    mergedGrid: [],
+                    stats: {} as InspectionStats,
+                    condition: 'N/A',
+                    aiInsight: null
+                },
              });
 
             const buffer = await file.arrayBuffer();
@@ -139,6 +146,9 @@ export const useInspectionStore = create<InspectionState>()(
                 file: { name: file.name, buffer: buffer },
                 nominalThickness,
                 colorMode: get().colorMode,
+                assetType: assetType,
+                pipeOuterDiameter: config.pipeOuterDiameter,
+                pipeLength: config.pipeLength,
             };
             worker?.postMessage(message, [buffer]);
         },
@@ -174,7 +184,7 @@ export const useInspectionStore = create<InspectionState>()(
                 isLoading: true,
                 loadingProgress: 0,
                 error: null,
-                inspectionResult: { ...state.inspectionResult!, nominalThickness: newNominalThickness }
+                inspectionResult: state.inspectionResult ? { ...state.inspectionResult, nominalThickness: newNominalThickness } : null
             }));
             
             worker.postMessage({
@@ -196,4 +206,5 @@ export const useInspectionStore = create<InspectionState>()(
       }
     }
 );
+
     

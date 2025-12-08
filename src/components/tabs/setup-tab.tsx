@@ -104,11 +104,15 @@ export function SetupTab() {
         setFileError('An Excel or CSV file is required.');
         return;
     }
-    const processConfig = {
-      pipeOuterDiameter: data.pipeOuterDiameter,
-      pipeLength: data.pipeLength,
-    };
-    processFirstFile(files[0], Number(data.nominalThickness), data.assetType, processConfig);
+    // This function should ONLY be called for the *first* file.
+    // Subsequent files are handled by the merge dialog.
+    if (!inspectionResult) {
+        const processConfig = {
+          pipeOuterDiameter: data.pipeOuterDiameter,
+          pipeLength: data.pipeLength,
+        };
+        processFirstFile(files[0], Number(data.nominalThickness), data.assetType, processConfig);
+    }
   };
   
   const handleMergeConfirm = (mergeData: MergeFormValues) => {
@@ -252,7 +256,7 @@ export function SetupTab() {
 
             <Button type="submit" className="w-full" disabled={files.length === 0 || !selectedAssetType || isLoading || !!inspectionResult}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? 'Processing...' : 'Process File'}
+              {isLoading ? 'Processing...' : 'Process First File'}
             </Button>
             {inspectionResult && (
                <Button variant="link" className="p-0 h-auto mt-2 w-full" onClick={handleClear}>Clear all data and start over</Button>
@@ -273,4 +277,6 @@ export function SetupTab() {
     </div>
   )
 }
+    
+
     
