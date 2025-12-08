@@ -1,7 +1,9 @@
 
 import * as XLSX from 'xlsx';
+import type { MergedGrid, MergedCell } from '../lib/types';
 
 // --- Color Helper ---
+// Using a simple numeric mapping for colors now
 function getColor(value: number, nominal: number): [number, number, number] {
     const percentage = (value / nominal) * 100;
     if (value <= 0) return [128, 128, 128]; // Grey for ND
@@ -11,7 +13,7 @@ function getColor(value: number, nominal: number): [number, number, number] {
     return [0, 0, 255];                       // Blue
 }
 
-function computeStats(grid: number[][], nominal: number) {
+function computeStats(grid: MergedGrid, nominal: number) {
     let minThickness = Infinity;
     let maxThickness = -Infinity;
     let sumThickness = 0;
@@ -26,11 +28,13 @@ function computeStats(grid: number[][], nominal: number) {
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const value = grid[y][x];
-            if (value <= 0) {
-                countND++;
+            const cell = grid[y][x];
+            if (!cell || cell.effectiveThickness === null) {
+                if (cell && cell.plateId) countND++;
                 continue;
             }
+            
+            const value = cell.effectiveThickness;
             
             validPointsCount++;
             sumThickness += value;
@@ -42,7 +46,7 @@ function computeStats(grid: number[][], nominal: number) {
                 maxThickness = value;
             }
 
-            const percentage = (value / nominal) * 100;
+            const percentage = cell.percentage || 0;
             if (percentage < 80) areaBelow80++;
             if (percentage < 70) areaBelow70++;
             if (percentage < 60) areaBelow60++;
@@ -79,77 +83,95 @@ function computeStats(grid: number[][], nominal: number) {
 }
 
 
-self.onmessage = async (event: MessageEvent<{ files: File[], nominalThickness: number, mergeConfig: any }>) => {
+self.onmessage = async (event: MessageEvent<{ files: {name: string, buffer: ArrayBuffer}[], nominalThickness: number, mergeConfig: any }>) => {
     const { files, nominalThickness, mergeConfig } = event.data;
 
     try {
-        let mergedGrid: number[][] = [];
+        let rawMergedGrid: {plateId: string, rawThickness: number}[][] = [];
+
         self.postMessage({ type: 'PROGRESS', progress: 10, message: 'Parsing files...' });
         
-        // --- Simplified Parsing and Merging Logic ---
         for (const file of files) {
-            const buffer = await file.arrayBuffer();
-            const workbook = XLSX.read(buffer, { type: 'array' });
+            const workbook = XLSX.read(file.buffer, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
 
-            let headerRow = -1;
+            let headerRow = 18; // Default
             for (let i = 0; i < Math.min(20, rawData.length); i++) {
                 if (JSON.stringify(rawData[i]).includes('mm')) {
                     headerRow = i;
                     break;
                 }
             }
-            if (headerRow === -1) headerRow = 18;
 
-            const dataGrid: number[][] = [];
+            const dataGrid: {plateId: string, rawThickness: number}[][] = [];
             for (let r = headerRow + 1; r < rawData.length; r++) {
                 const row = rawData[r];
                 if (!row) continue;
                 const cleanRow = row.slice(1).map((val: any) => {
                     const num = parseFloat(val);
-                    return isNaN(num) ? -1 : num; // Use -1 for ND
+                    return { plateId: file.name, rawThickness: isNaN(num) ? -1 : num }; // Use -1 for ND
                 });
                 dataGrid.push(cleanRow);
             }
             
             // Simple right-append merge logic
-            if (mergedGrid.length === 0) {
-                mergedGrid = dataGrid;
+            if (rawMergedGrid.length === 0) {
+                rawMergedGrid = dataGrid;
             } else {
-                 const targetRows = Math.max(mergedGrid.length, dataGrid.length);
-                 while(mergedGrid.length < targetRows) mergedGrid.push(new Array(mergedGrid[0].length).fill(-1));
-                 while(dataGrid.length < targetRows) dataGrid.push(new Array(dataGrid[0].length).fill(-1));
-                 for(let i=0; i<targetRows; i++) mergedGrid[i] = mergedGrid[i].concat(dataGrid[i]);
+                 const targetRows = Math.max(rawMergedGrid.length, dataGrid.length);
+                 const padCell = { plateId: 'ND', rawThickness: -1 };
+                 while(rawMergedGrid.length < targetRows) rawMergedGrid.push(new Array(rawMergedGrid[0].length).fill(padCell));
+                 while(dataGrid.length < targetRows) dataGrid.push(new Array(dataGrid[0].length).fill(padCell));
+                 for(let i=0; i<targetRows; i++) rawMergedGrid[i] = rawMergedGrid[i].concat(dataGrid[i]);
             }
         }
         
-        self.postMessage({ type: 'PROGRESS', progress: 50, message: 'Calculating statistics...' });
+        self.postMessage({ type: 'PROGRESS', progress: 50, message: 'Enriching data...' });
+
+        const height = rawMergedGrid.length;
+        const width = rawMergedGrid[0]?.length || 0;
         
-        const { stats, condition } = computeStats(mergedGrid, nominalThickness);
-        const { width, height } = stats.gridSize;
-
-        self.postMessage({ type: 'PROGRESS', progress: 70, message: 'Generating textures...' });
-
-        // --- Generate Texture Buffers ---
+        const finalGrid: MergedGrid = Array(height).fill(null).map(() => Array(width).fill(null));
+        
+        // --- Generate Texture Buffers & Final Grid ---
         const displacementBuffer = new Float32Array(width * height);
         const colorBuffer = new Uint8Array(width * height * 3);
 
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
-                const value = mergedGrid[y][x];
                 const index = y * width + x;
+                const cell = rawMergedGrid[y][x];
+                
+                let effectiveThickness: number | null = null;
+                let percentage: number | null = null;
+                
+                if (cell.rawThickness > 0) {
+                    effectiveThickness = Math.min(cell.rawThickness, nominalThickness);
+                    percentage = (effectiveThickness / nominalThickness) * 100;
+                }
 
-                // Displacement: raw thickness values
-                displacementBuffer[index] = value > 0 ? value : nominalThickness;
+                finalGrid[y][x] = {
+                    plateId: cell.plateId,
+                    rawThickness: cell.rawThickness > 0 ? cell.rawThickness : null,
+                    effectiveThickness: effectiveThickness,
+                    percentage: percentage,
+                };
+                
+                // Displacement: raw effective thickness values
+                displacementBuffer[index] = effectiveThickness !== null ? effectiveThickness : nominalThickness;
 
                 // Color
-                const [r, g, b] = getColor(value, nominalThickness);
+                const [r, g, b] = getColor(effectiveThickness !== null ? effectiveThickness : -1, nominalThickness);
                 colorBuffer[index * 3] = r;
                 colorBuffer[index * 3 + 1] = g;
                 colorBuffer[index * 3 + 2] = b;
             }
         }
+        
+        self.postMessage({ type: 'PROGRESS', progress: 75, message: 'Calculating stats...' });
+
+        const { stats, condition } = computeStats(finalGrid, nominalThickness);
         
         self.postMessage({ type: 'PROGRESS', progress: 95, message: 'Finalizing...' });
         
@@ -158,7 +180,7 @@ self.onmessage = async (event: MessageEvent<{ files: File[], nominalThickness: n
             type: 'DONE',
             displacementBuffer,
             colorBuffer,
-            gridMatrix: mergedGrid, // Send the raw grid for probe lookup
+            gridMatrix: finalGrid,
             stats,
             condition,
         }, [displacementBuffer.buffer, colorBuffer.buffer]);
@@ -170,3 +192,5 @@ self.onmessage = async (event: MessageEvent<{ files: File[], nominalThickness: n
 
 // This is required to make TypeScript treat this file as a module.
 export {};
+
+    

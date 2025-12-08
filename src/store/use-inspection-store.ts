@@ -2,7 +2,7 @@
 "use client"
 
 import { create } from 'zustand';
-import type { MergedInspectionResult, AIInsight, Plate, MergedGrid } from '@/lib/types';
+import type { MergedInspectionResult, AIInsight, Plate, MergedGrid, AssetType } from '@/lib/types';
 import { DataVault } from './data-vault';
 
 export interface WorkerOutput {
@@ -23,7 +23,7 @@ interface InspectionState {
   setInspectionResult: (result: Omit<MergedInspectionResult, 'mergedGrid'> | null) => void;
   isLoading: boolean;
   loadingProgress: number;
-  processFiles: (files: File[], nominalThickness: number, assetType: any, mergeConfig: any) => void;
+  processFiles: (files: File[], nominalThickness: number, assetType: AssetType, mergeConfig: any) => void;
   selectedPoint: { x: number; y: number } | null;
   setSelectedPoint: (point: { x: number; y: number } | null) => void;
   updateAIInsight: (insight: AIInsight | null) => void;
@@ -56,14 +56,16 @@ export const useInspectionStore = create<InspectionState>()(
                 DataVault.colorBuffer = data.colorBuffer;
                 DataVault.gridMatrix = data.gridMatrix;
                 
+                const currentState = get().inspectionResult;
+                
                 set(state => ({
                     inspectionResult: {
                         // All lightweight data goes into state
                         plates: [], // The worker now handles merging, so individual plates are abstracted
-                        nominalThickness: data.stats!.nominalThickness, // Assuming worker sends this
-                        assetType: state.inspectionResult?.assetType || 'Plate', // Persist asset type
-                        pipeOuterDiameter: state.inspectionResult?.pipeOuterDiameter,
-                        pipeLength: state.inspectionResult?.pipeLength,
+                        nominalThickness: data.stats!.nominalThickness || currentState?.nominalThickness || 0,
+                        assetType: currentState?.assetType || 'Plate', // Persist asset type
+                        pipeOuterDiameter: currentState?.pipeOuterDiameter,
+                        pipeLength: currentState?.pipeLength,
                         stats: data.stats,
                         condition: data.condition,
                         aiInsight: null,
@@ -95,13 +97,16 @@ export const useInspectionStore = create<InspectionState>()(
           }
         },
         
-        setIsLoading: (isLoading) => set({ isLoading }),
-        
         setSelectedPoint: (point) => set({ selectedPoint: point }),
         
         setColorMode: (mode) => set({ colorMode: mode }),
 
         processFiles: (files, nominalThickness, assetType, mergeConfig) => {
+            if (!worker) {
+                console.error("Worker not initialized!");
+                set({ isLoading: false });
+                return;
+            }
             set({ isLoading: true, loadingProgress: 0 });
             // The initial state for the result can be set here
              set(state => ({ 
@@ -113,10 +118,16 @@ export const useInspectionStore = create<InspectionState>()(
                 } as any,
              }));
 
-            worker?.postMessage({
-                files: files,
-                nominalThickness: nominalThickness,
-                mergeConfig: mergeConfig,
+            const fileBuffers = files.map(file => file.arrayBuffer());
+            Promise.all(fileBuffers).then(buffers => {
+                 worker?.postMessage({
+                    files: files.map((file, i) => ({
+                        name: file.name,
+                        buffer: buffers[i]
+                    })),
+                    nominalThickness: nominalThickness,
+                    mergeConfig: mergeConfig,
+                }, buffers); // Pass buffers as transferable objects
             });
         },
         
@@ -133,11 +144,12 @@ export const useInspectionStore = create<InspectionState>()(
         },
         
         reprocessPlates: (newNominalThickness: number) => {
-            const files = (get() as any).inspectionResult?.rawFiles || []; // Need to store raw files if we want to reprocess
-            if (files.length > 0) {
-                 get().processFiles(files, newNominalThickness, get().inspectionResult?.assetType, {});
-            }
+            // This would need to be re-implemented to re-run the worker
+            // For now, it's a no-op but could be re-enabled by storing raw file refs
+            console.warn("Reprocessing logic needs to re-trigger the worker.");
         },
       }
     }
 );
+
+    

@@ -96,7 +96,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
         material.uniforms.displacementTexture.value = displacementTextureRef.current;
         material.uniforms.zScale.value = zScale;
         material.uniforms.nominalThickness.value = nominalThickness;
-        material.uniforms.pipeRadius.value = pipeOuterDiameter / 2;
+        material.uniforms.pipeRadius.value = (pipeOuterDiameter || 0) / 2;
         material.needsUpdate = true;
     }
   }, [dataVersion, stats, zScale, nominalThickness, pipeOuterDiameter]);
@@ -241,7 +241,9 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      currentMount.innerHTML = '';
+      if (currentMount) {
+        currentMount.innerHTML = '';
+      }
     };
   }, [inspectionResult, animate, resetCamera, pipeOuterDiameter, pipeLength, zScale, nominalThickness]);
   
@@ -310,3 +312,5 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   )
 });
 TankView3D.displayName = "TankView3D";
+
+    

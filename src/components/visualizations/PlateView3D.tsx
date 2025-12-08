@@ -104,15 +104,52 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   }, [dataVersion, stats, zScale, nominalThickness]);
 
 
+  const setView = useCallback((view: 'iso' | 'top' | 'side') => {
+    if (cameraRef.current && controlsRef.current && stats) {
+        controlsRef.current.target.set(0, 0, 0);
+        const aspect = stats.gridSize.height / stats.gridSize.width;
+        const distance = Math.max(VISUAL_WIDTH, VISUAL_WIDTH * aspect) * 1.5;
+        switch (view) {
+            case 'top':
+                cameraRef.current.position.set(0, distance, 0.001); // slight offset to avoid gimbal lock
+                break;
+            case 'side':
+                cameraRef.current.position.set(distance, 0, 0);
+                break;
+            case 'iso':
+            default:
+                 cameraRef.current.position.set(distance / 2, distance / 2, distance / 2);
+                break;
+        }
+        controlsRef.current.update();
+    }
+  }, [stats]);
+
+
   const resetCamera = useCallback(() => {
-    // setView('iso');
-  }, []);
+    setView('iso');
+  }, [setView]);
+
 
    useImperativeHandle(ref, () => ({
     capture: () => rendererRef.current?.domElement.toDataURL('image/png') || '',
-    focus: (x, y, zoomIn) => {},
+    focus: (x, y, zoomIn) => {
+        if (!cameraRef.current || !controlsRef.current || !stats) return;
+
+        const { width, height } = stats.gridSize;
+        const aspect = height / width;
+        const targetX = (x / (width - 1)) * VISUAL_WIDTH - VISUAL_WIDTH / 2;
+        const targetZ = (y / (height - 1)) * (VISUAL_WIDTH * aspect) - (VISUAL_WIDTH * aspect) / 2;
+        
+        controlsRef.current.target.set(targetX, 0, targetZ);
+        
+        const distance = zoomIn ? 10 : 50;
+        cameraRef.current.position.set(targetX, distance, targetZ + distance);
+
+        controlsRef.current.update();
+    },
     resetCamera: resetCamera,
-    setView: (view) => {},
+    setView: setView,
   }));
   
   // Setup scene effect
@@ -132,7 +169,9 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     controlsRef.current = new OrbitControls(cameraRef.current, rendererRef.current.domElement);
 
     sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.7));
-    sceneRef.current.add(new THREE.DirectionalLight(0xffffff, 1.0));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(50, 100, 75);
+    sceneRef.current.add(dirLight);
 
     const { width, height } = stats.gridSize;
     const aspect = height / width;
@@ -188,7 +227,9 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      currentMount.innerHTML = '';
+      if (currentMount) {
+        currentMount.innerHTML = '';
+      }
     };
   }, [inspectionResult, animate, resetCamera, nominalThickness, zScale]);
 
@@ -249,3 +290,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
+
+    

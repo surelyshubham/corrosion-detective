@@ -96,7 +96,7 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
         material.uniforms.displacementTexture.value = displacementTextureRef.current;
         material.uniforms.zScale.value = zScale;
         material.uniforms.nominalThickness.value = nominalThickness;
-        material.uniforms.pipeRadius.value = pipeOuterDiameter / 2;
+        material.uniforms.pipeRadius.value = (pipeOuterDiameter || 0) / 2;
         material.needsUpdate = true;
     }
   }, [dataVersion, stats, zScale, nominalThickness, pipeOuterDiameter]);
@@ -186,13 +186,6 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
             uniform float pipeRadius;
             varying vec2 vUv;
 
-            // Helper to get original cylindrical position
-            vec3 getCylindrical(float u, float v) {
-                float angle = u * 2.0 * 3.14159265;
-                float height = (v - 0.5) * ${pipeLength.toFixed(2)};
-                return vec3(pipeRadius * cos(angle), height, pipeRadius * sin(angle));
-            }
-
             void main() {
                 vUv = uv;
                 float displacementValue = texture2D(displacementTexture, uv).r;
@@ -237,7 +230,9 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      currentMount.innerHTML = '';
+      if (currentMount) {
+        currentMount.innerHTML = '';
+      }
     };
   }, [inspectionResult, animate, resetCamera, pipeOuterDiameter, pipeLength, zScale, nominalThickness]);
   
@@ -307,3 +302,5 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 });
 
 PipeView3D.displayName = "PipeView3D";
+
+    

@@ -1,4 +1,8 @@
-import type { InspectionDataPoint, InspectionStats, Condition, MergedGrid } from './types';
+import type { InspectionDataPoint, InspectionStats, Condition, MergedGrid, Plate } from './types';
+
+// This file's logic is now primarily handled inside the Web Worker.
+// These functions can be kept for type reference or potential future client-side-only operations,
+// but they are no longer on the critical path for the main data processing workflow.
 
 interface ProcessDataResult {
   processedData: InspectionDataPoint[];
@@ -223,3 +227,10 @@ export const reprocessMergedData = (
   
   return { stats, condition };
 };
+
+export const mergePlates = (plates: Plate[], mergeConfig: any): MergedInspectionResult => {
+    // This logic is now handled by the worker
+    return {} as MergedInspectionResult;
+};
+
+    
