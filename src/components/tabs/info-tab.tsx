@@ -88,14 +88,7 @@ export function InfoTab() {
   return (
     <ScrollArea className="h-full pr-4">
       <div className="grid md:grid-cols-3 gap-6 animate-fade-in">
-        <div className="md:col-span-2 space-y-6">
-
-          {/* This part might need adjustment if plates data is not available in the same way */}
-          {/* {plates.map((plate, index) => (
-            <PlateStatsCard key={plate.id} plate={plate} index={index} />
-          ))} */}
-
-          {/* {plates.length > 1 && ( */}
+        <div className="md:col-span-3 space-y-6">
             <>
               <Card>
                 <CardHeader>
@@ -129,59 +122,6 @@ export function InfoTab() {
                 </CardContent>
               </Card>
             </>
-          {/* )} */}
-
-        </div>
-
-        <div className="md:col-span-1">
-          <div className="sticky top-6 space-y-6">
-            <Card className="bg-card">
-              <CardHeader>
-                <CardTitle className="font-headline flex items-center gap-2">
-                  <BrainCircuit className="text-primary"/>
-                  AI-Powered Insight
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {aiInsight ? (
-                  aiInsight.condition === 'Error' ? (
-                    <div className="text-destructive">{aiInsight.recommendation}</div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="font-semibold text-sm">Condition Analysis</h4>
-                        <p className="text-sm text-muted-foreground">{aiInsight.condition}</p>
-                      </div>
-                      <Separator />
-                      <div>
-                        <h4 className="font-semibold text-sm">Recommended Action</h4>
-                        <p className="text-sm font-bold text-accent">{aiInsight.recommendation}</p>
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-40">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="mt-4 text-sm">Generating insights for the merged data...</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            
-            {plates.length > 1 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-headline flex items-center gap-2">
-                    <Layers className="text-primary" />
-                    Plate Layout
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">The 2D Heatmap and 3D View tabs show the visual layout of the merged plates.</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
         </div>
       </div>
     </ScrollArea>
