@@ -14,6 +14,7 @@ import { assetTypes, type AssetType } from '@/lib/types'
 import { FileUp, Loader2, Paperclip, X, Merge } from 'lucide-react'
 import { DummyDataGenerator } from '@/components/dummy-data-generator'
 import { useInspectionStore } from '@/store/use-inspection-store'
+import { DataVault } from '@/store/data-vault'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { useToast } from '@/hooks/use-toast'
@@ -63,7 +64,7 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
     resolver: zodResolver(mergeSchema),
     defaultValues: {
         direction: 'right',
-        start: inspectionResult ? inspectionResult.stats.gridSize.width : 0,
+        start: DataVault.stats ? DataVault.stats.gridSize.width : 0,
     }
   });
 
@@ -280,4 +281,5 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
       <DummyDataGenerator isLoading={isLoading} />
     </div>
   )
-}
+
+    
