@@ -7,11 +7,12 @@ import { useInspectionStore } from '@/store/use-inspection-store'
 import { DataVault } from '@/store/data-vault'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Download, ArrowUpDown, Search } from 'lucide-react'
+import { Download, ArrowUpDown, Search, AlertTriangle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { downloadFile } from '@/lib/utils'
 import { ScrollArea } from '../ui/scroll-area'
 import type { MergedCell } from '@/lib/types'
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert'
 
 interface TableDataPoint extends MergedCell {
     x: number;
@@ -22,6 +23,8 @@ interface TableDataPoint extends MergedCell {
 
 type SortKey = keyof TableDataPoint;
 type SortDirection = 'asc' | 'desc'
+
+const PREVIEW_ROW_COUNT = 100;
 
 export function DataTableTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint } = useInspectionStore()
@@ -78,13 +81,8 @@ export function DataTableTab() {
     return filteredData
   }, [data, filter, sortConfig])
 
-  const requestSort = (key: SortKey) => {
-    let direction: SortDirection = 'asc'
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc'
-    }
-    setSortConfig({ key, direction })
-  }
+  const previewData = useMemo(() => sortedAndFilteredData.slice(0, PREVIEW_ROW_COUNT), [sortedAndFilteredData]);
+
 
   const handleExport = () => {
     const fileName = inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join('_') || 'merged_export';
@@ -133,6 +131,18 @@ export function DataTableTab() {
           Export to Excel
         </Button>
       </div>
+
+       {sortedAndFilteredData.length > PREVIEW_ROW_COUNT && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Performance Notice</AlertTitle>
+          <AlertDescription>
+            Showing the first {PREVIEW_ROW_COUNT} of {sortedAndFilteredData.length} data points for preview. Use the "Export to Excel" button to get the full dataset.
+          </AlertDescription>
+        </Alert>
+      )}
+
+
       <ScrollArea className="border rounded-md flex-grow">
         <Table>
           <TableHeader className="sticky top-0 bg-card">
@@ -149,7 +159,7 @@ export function DataTableTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedAndFilteredData.map((item, index) => (
+            {previewData.map((item, index) => (
               <TableRow 
                 key={`${item.x}-${item.y}-${index}`}
                 onClick={() => setSelectedPoint({x: item.x, y: item.y})}
@@ -171,3 +181,5 @@ export function DataTableTab() {
     </div>
   )
 }
+
+    

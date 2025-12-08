@@ -91,7 +91,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         colorTextureRef.current.image.data = colorBuffer;
         colorTextureRef.current.needsUpdate = true;
     } else {
-        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBFormat, THREE.UnsignedByteType);
+        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
@@ -294,3 +294,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
+
+    

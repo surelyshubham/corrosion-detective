@@ -81,7 +81,7 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
         colorTextureRef.current.image.data = colorBuffer;
         colorTextureRef.current.needsUpdate = true;
     } else {
-        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBFormat, THREE.UnsignedByteType);
+        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
@@ -301,3 +301,5 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 });
 
 PipeView3D.displayName = "PipeView3D";
+
+    

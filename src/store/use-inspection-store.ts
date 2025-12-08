@@ -2,7 +2,7 @@
 "use client"
 
 import { create } from 'zustand';
-import type { MergedInspectionResult, AIInsight, Plate, MergedGrid, AssetType } from '@/lib/types';
+import type { MergedInspectionResult, AIInsight, Plate, MergedGrid, AssetType, InspectionStats } from '@/lib/types';
 import { DataVault } from './data-vault';
 
 export interface WorkerOutput {
@@ -12,18 +12,18 @@ export interface WorkerOutput {
   displacementBuffer?: Float32Array;
   colorBuffer?: Uint8Array;
   gridMatrix?: MergedGrid;
-  stats?: MergedInspectionResult['stats'];
+  stats?: InspectionStats;
   condition?: MergedInspectionResult['condition'];
 }
 
 export type ColorMode = 'mm' | '%';
 
 interface InspectionState {
-  inspectionResult: Omit<MergedInspectionResult, 'mergedGrid'> | null;
-  setInspectionResult: (result: Omit<MergedInspectionResult, 'mergedGrid'> | null) => void;
+  inspectionResult: Omit<MergedInspectionResult, 'mergedGrid' | 'stats'> | null;
+  setInspectionResult: (result: Omit<MergedInspectionResult, 'mergedGrid' | 'stats'> | null) => void;
   isLoading: boolean;
   loadingProgress: number;
-  error: string | null; // Added for error handling
+  error: string | null;
   processFiles: (files: File[], nominalThickness: number, assetType: AssetType, mergeConfig: any) => void;
   selectedPoint: { x: number; y: number } | null;
   setSelectedPoint: (point: { x: number; y: number } | null) => void;
@@ -31,7 +31,7 @@ interface InspectionState {
   reprocessPlates: (newNominalThickness: number) => void;
   colorMode: ColorMode;
   setColorMode: (mode: ColorMode) => void;
-  dataVersion: number; // Used to trigger re-renders when data in the vault changes
+  dataVersion: number;
 }
 
 let worker: Worker | null = null;
@@ -61,20 +61,19 @@ export const useInspectionStore = create<InspectionState>()(
                 DataVault.displacementBuffer = data.displacementBuffer;
                 DataVault.colorBuffer = data.colorBuffer;
                 DataVault.gridMatrix = data.gridMatrix;
+                DataVault.stats = data.stats;
                 
                 const currentState = get().inspectionResult;
                 
                 set(state => ({
                     inspectionResult: {
+                        ...(currentState || {}),
                         plates: [],
                         nominalThickness: data.stats!.nominalThickness || currentState?.nominalThickness || 0,
-                        assetType: currentState?.assetType || 'Plate',
-                        pipeOuterDiameter: currentState?.pipeOuterDiameter,
-                        pipeLength: currentState?.pipeLength,
-                        stats: data.stats,
                         condition: data.condition,
                         aiInsight: null,
-                    },
+                        // stats and mergedGrid are now in DataVault
+                    } as Omit<MergedInspectionResult, 'mergedGrid' | 'stats'>,
                     isLoading: false,
                     error: null,
                     dataVersion: state.dataVersion + 1,
@@ -100,6 +99,7 @@ export const useInspectionStore = create<InspectionState>()(
             DataVault.displacementBuffer = null;
             DataVault.colorBuffer = null;
             DataVault.gridMatrix = null;
+            DataVault.stats = null;
             set({ inspectionResult: null, selectedPoint: null, isLoading: false, dataVersion: 0, error: null });
           } else {
             set({ inspectionResult: result });
@@ -117,7 +117,7 @@ export const useInspectionStore = create<InspectionState>()(
                 type: 'RECOLOR',
                 gridMatrix: DataVault.gridMatrix,
                 nominalThickness: currentResult.nominalThickness,
-                stats: currentResult.stats,
+                stats: DataVault.stats,
                 colorMode: mode,
             });
         },
@@ -186,3 +186,5 @@ export const useInspectionStore = create<InspectionState>()(
       }
     }
 );
+
+    

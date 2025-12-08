@@ -5,16 +5,16 @@ import type { MergedGrid, MergedCell, InspectionStats, Condition } from '../lib/
 type ColorMode = 'mm' | '%';
 
 // --- Color Helper ---
-function getAbsoluteColor(percentage: number | null): [number, number, number] {
-    if (percentage === null) return [128, 128, 128]; // Grey for ND
-    if (percentage < 70) return [255, 0, 0];   // Red
-    if (percentage < 80) return [255, 255, 0]; // Yellow
-    if (percentage < 90) return [0, 255, 0];   // Green
-    return [0, 0, 255];                       // Blue
+function getAbsoluteColor(percentage: number | null): [number, number, number, number] {
+    if (percentage === null) return [128, 128, 128, 255]; // Grey for ND
+    if (percentage < 70) return [255, 0, 0, 255];   // Red
+    if (percentage < 80) return [255, 255, 0, 255]; // Yellow
+    if (percentage < 90) return [0, 255, 0, 255];   // Green
+    return [0, 0, 255, 255];                       // Blue
 }
 
-function getNormalizedColor(normalizedPercent: number | null): [number, number, number] {
-    if (normalizedPercent === null) return [128, 128, 128]; // Grey for ND
+function getNormalizedColor(normalizedPercent: number | null): [number, number, number, number] {
+    if (normalizedPercent === null) return [128, 128, 128, 255]; // Grey for ND
     const hue = 240 * (1 - normalizedPercent);
     const saturation = 1;
     const lightness = 0.5;
@@ -28,7 +28,7 @@ function getNormalizedColor(normalizedPercent: number | null): [number, number, 
     else if (180 <= hue && hue < 240) { [r, g, b] = [0, x, c]; }
     else if (240 <= hue && hue < 300) { [r, g, b] = [x, 0, c]; }
     else if (300 <= hue && hue < 360) { [r, g, b] = [c, 0, x]; }
-    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255, 255];
 }
 
 // --- Main Logic ---
@@ -128,7 +128,7 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
     const height = grid.length;
     const width = grid[0]?.length || 0;
     const displacementBuffer = new Float32Array(width * height);
-    const colorBuffer = new Uint8Array(width * height * 3);
+    const colorBuffer = new Uint8Array(width * height * 4); // RGBA
     const range = max - min;
 
      for (let y = 0; y < height; y++) {
@@ -136,16 +136,18 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
             const index = y * width + x;
             const cell = grid[y][x];
             displacementBuffer[index] = cell.effectiveThickness !== null ? cell.effectiveThickness : nominal;
-            let rgb: [number, number, number];
+            let rgba: [number, number, number, number];
             if (colorMode === '%') {
                  const normalized = cell.effectiveThickness !== null && range > 0 ? (cell.effectiveThickness - min) / range : null;
-                 rgb = getNormalizedColor(normalized);
+                 rgba = getNormalizedColor(normalized);
             } else {
-                 rgb = getAbsoluteColor(cell.percentage);
+                 rgba = getAbsoluteColor(cell.percentage);
             }
-            colorBuffer[index * 3] = rgb[0];
-            colorBuffer[index * 3 + 1] = rgb[1];
-            colorBuffer[index * 3 + 2] = rgb[2];
+            const colorIndex = index * 4;
+            colorBuffer[colorIndex] = rgba[0];
+            colorBuffer[colorIndex + 1] = rgba[1];
+            colorBuffer[colorIndex + 2] = rgba[2];
+            colorBuffer[colorIndex + 3] = rgba[3];
         }
     }
     return { displacementBuffer, colorBuffer };
@@ -176,7 +178,13 @@ function universalParse(buffer: ArrayBuffer): any[][] {
     const decoder = new TextDecoder('utf-8');
     const text = decoder.decode(buffer);
     const lines = text.split(/[\r\n]+/);
-    return lines.map(line => line.split(',').map(cell => cell.trim()));
+    return lines.map(line => {
+        // Handle cases where a row might be a single string of comma-separated values
+        if (line.includes(',') && line.split(',').length > 1) {
+            return line.split(',').map(cell => cell.trim());
+        }
+        return [line]; // Treat as a single column if no commas
+    });
 }
 
 
@@ -267,3 +275,5 @@ self.onmessage = async (event: MessageEvent<any>) => {
 };
 
 export {};
+
+    

@@ -81,7 +81,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
         colorTextureRef.current.image.data = colorBuffer;
         colorTextureRef.current.needsUpdate = true;
     } else {
-        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBFormat, THREE.UnsignedByteType);
+        const texture = new THREE.DataTexture(colorBuffer, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
         texture.minFilter = THREE.NearestFilter;
         texture.magFilter = THREE.NearestFilter;
         texture.needsUpdate = true;
@@ -311,3 +311,5 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   )
 });
 TankView3D.displayName = "TankView3D";
+
+    
