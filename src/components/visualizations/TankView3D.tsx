@@ -1,5 +1,4 @@
 
-
 "use client"
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
@@ -312,5 +311,3 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   )
 });
 TankView3D.displayName = "TankView3D";
-
-    

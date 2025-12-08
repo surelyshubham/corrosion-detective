@@ -1,5 +1,4 @@
 
-
 "use client"
 
 import React, { useState, useRef, useEffect } from 'react'
@@ -142,6 +141,13 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
     };
     processFiles(files, Number(data.nominalThickness), data.assetType, mergeConfig);
   };
+  
+  const onDebouncedNominalChange = (value: number) => {
+     if (inspectionResult) {
+        onNominalThicknessChange(value);
+    }
+  };
+  
 
   const handleClear = () => {
     setFiles([]);
@@ -248,8 +254,11 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
                     step="0.1" 
                     {...field}
                     onChange={(e) => {
+                      const val = parseFloat(e.target.value);
                       field.onChange(e);
-                      // Debounced reprocessing is handled by a different mechanism now
+                      if (!isNaN(val)) {
+                        onDebouncedNominalChange(val);
+                      }
                     }}
                     disabled={isLoading} />
                 )}

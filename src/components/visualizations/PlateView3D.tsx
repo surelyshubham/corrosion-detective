@@ -93,15 +93,14 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     
     // Update material if mesh exists
     if (meshRef.current) {
-        const material = meshRef.current.material as THREE.ShaderMaterial;
-        material.uniforms.colorTexture.value = colorTextureRef.current;
-        material.uniforms.displacementTexture.value = displacementTextureRef.current;
-        material.uniforms.zScale.value = zScale;
-        material.uniforms.nominalThickness.value = nominalThickness;
+        const material = meshRef.current.material as THREE.MeshStandardMaterial;
+        material.map = colorTextureRef.current;
+        material.displacementMap = displacementTextureRef.current;
+        material.displacementScale = zScale;
         material.needsUpdate = true;
     }
 
-  }, [dataVersion, stats, zScale, nominalThickness]);
+  }, [dataVersion, stats, zScale]);
 
 
   const setView = useCallback((view: 'iso' | 'top' | 'side') => {
@@ -178,35 +177,9 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     const geometry = new THREE.PlaneGeometry(VISUAL_WIDTH, VISUAL_WIDTH * aspect, width - 1, height - 1);
     geometry.rotateX(-Math.PI / 2);
 
-    const material = new THREE.ShaderMaterial({
-        uniforms: {
-            colorTexture: { value: null },
-            displacementTexture: { value: null },
-            zScale: { value: zScale },
-            nominalThickness: { value: nominalThickness || 10 },
-        },
-        vertexShader: `
-            uniform sampler2D displacementTexture;
-            uniform float zScale;
-            uniform float nominalThickness;
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                vec4 disp = texture2D(displacementTexture, uv);
-                float displacementValue = disp.r;
-                float loss = nominalThickness - displacementValue;
-                vec3 newPosition = position + normal * (-loss * zScale);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform sampler2D colorTexture;
-            varying vec2 vUv;
-            void main() {
-                gl_FragColor = texture2D(colorTexture, vUv);
-            }
-        `,
+    const material = new THREE.MeshStandardMaterial({
         side: THREE.DoubleSide,
+        displacementScale: zScale,
     });
     
     meshRef.current = new THREE.Mesh(geometry, material);
@@ -231,8 +204,15 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         currentMount.innerHTML = '';
       }
     };
-  }, [inspectionResult, animate, resetCamera, nominalThickness, zScale]);
+  }, [inspectionResult, animate, resetCamera, zScale]);
 
+  useEffect(() => {
+    if (meshRef.current) {
+        const material = meshRef.current.material as THREE.MeshStandardMaterial;
+        material.displacementScale = zScale;
+        material.needsUpdate = true;
+    }
+  }, [zScale]);
   
   if (!inspectionResult) return null;
 
@@ -290,5 +270,3 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
-
-    

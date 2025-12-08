@@ -99,7 +99,19 @@ export const useInspectionStore = create<InspectionState>()(
         
         setSelectedPoint: (point) => set({ selectedPoint: point }),
         
-        setColorMode: (mode) => set({ colorMode: mode }),
+        setColorMode: (mode) => {
+            const currentResult = get().inspectionResult;
+            if (!worker || !currentResult) return;
+            set({ colorMode: mode, isLoading: true, loadingProgress: 50 }); // Show loading while worker re-colors
+            
+             worker.postMessage({
+                type: 'RECOLOR',
+                gridMatrix: DataVault.gridMatrix,
+                nominalThickness: currentResult.nominalThickness,
+                stats: currentResult.stats,
+                colorMode: mode,
+            });
+        },
 
         processFiles: (files, nominalThickness, assetType, mergeConfig) => {
             if (!worker) {
@@ -121,12 +133,13 @@ export const useInspectionStore = create<InspectionState>()(
             const fileBuffers = files.map(file => file.arrayBuffer());
             Promise.all(fileBuffers).then(buffers => {
                  worker?.postMessage({
+                    type: 'PROCESS',
                     files: files.map((file, i) => ({
                         name: file.name,
                         buffer: buffers[i]
                     })),
                     nominalThickness: nominalThickness,
-                    mergeConfig: mergeConfig,
+                    colorMode: get().colorMode,
                 }, buffers); // Pass buffers as transferable objects
             });
         },
@@ -144,12 +157,23 @@ export const useInspectionStore = create<InspectionState>()(
         },
         
         reprocessPlates: (newNominalThickness: number) => {
-            // This would need to be re-implemented to re-run the worker
-            // For now, it's a no-op but could be re-enabled by storing raw file refs
-            console.warn("Reprocessing logic needs to re-trigger the worker.");
+            if (!worker || !DataVault.gridMatrix) {
+                console.error("Worker or data not available for reprocessing");
+                return;
+            }
+             set(state => ({ 
+                isLoading: true,
+                loadingProgress: 0,
+                inspectionResult: { ...state.inspectionResult!, nominalThickness: newNominalThickness }
+            }));
+            
+            worker.postMessage({
+                type: 'REPROCESS',
+                gridMatrix: DataVault.gridMatrix,
+                nominalThickness: newNominalThickness,
+                colorMode: get().colorMode
+            });
         },
       }
     }
 );
-
-    

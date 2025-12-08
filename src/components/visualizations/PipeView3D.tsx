@@ -1,5 +1,4 @@
 
-
 "use client"
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
@@ -302,5 +301,3 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 });
 
 PipeView3D.displayName = "PipeView3D";
-
-    
