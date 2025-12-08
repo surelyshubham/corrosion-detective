@@ -233,7 +233,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
           const uv = intersects[0].uv;
           const { width, height } = stats!.gridSize;
           const gridX = Math.floor(uv.x * width);
-          const gridY = Math.floor((1-uv.y) * height); // Flipped Y to match texture
+          const gridY = Math.floor(uv.y * height);
           
           if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
               const pointData = DataVault.gridMatrix[gridY]?.[gridX];
@@ -379,4 +379,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 });
 PlateView3D.displayName = "PlateView3D";
 
+    
     

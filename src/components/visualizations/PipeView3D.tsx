@@ -260,7 +260,7 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
           const uv = intersects[0].uv;
           const { width, height } = stats!.gridSize;
           const gridX = Math.floor(uv.x * width);
-          const gridY = Math.floor((1 - uv.y) * height);
+          const gridY = Math.floor(uv.y * height);
           
           if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
               const pointData = DataVault.gridMatrix[gridY]?.[gridX];
@@ -382,4 +382,5 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 
 PipeView3D.displayName = "PipeView3D";
 
+    
     

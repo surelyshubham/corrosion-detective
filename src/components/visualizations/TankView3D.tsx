@@ -259,7 +259,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
           const uv = intersects[0].uv;
           const { width, height } = stats!.gridSize;
           const gridX = Math.floor(uv.x * width);
-          const gridY = Math.floor((1 - uv.y) * height);
+          const gridY = Math.floor(uv.y * height);
           
           if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
               const pointData = DataVault.gridMatrix[gridY]?.[gridX];
@@ -380,4 +380,5 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
 });
 TankView3D.displayName = "TankView3D";
 
+    
     
