@@ -48,6 +48,8 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
   const pointerRef = useRef<THREE.Vector2 | null>(null);
   const originAxesRef = useRef<THREE.AxesHelper | null>(null);
+  const minMarkerRef = useRef<THREE.Mesh | null>(null);
+  const maxMarkerRef = useRef<THREE.Mesh | null>(null);
   const colorTextureRef = useRef<THREE.DataTexture | null>(null);
   const displacementTextureRef = useRef<THREE.DataTexture | null>(null);
 
@@ -117,18 +119,19 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     if (cameraRef.current && controlsRef.current && stats) {
         const { width, height } = stats.gridSize;
         const aspect = height / width;
-        controlsRef.current.target.set(VISUAL_WIDTH / 2, 0, (VISUAL_WIDTH * aspect) / 2);
-        const distance = Math.max(VISUAL_WIDTH, VISUAL_WIDTH * aspect) * 1.5;
+        const visualHeight = VISUAL_WIDTH * aspect;
+        controlsRef.current.target.set(VISUAL_WIDTH / 2, 0, visualHeight / 2);
+        const distance = Math.max(VISUAL_WIDTH, visualHeight) * 1.5;
         switch (view) {
             case 'top':
-                cameraRef.current.position.set(VISUAL_WIDTH / 2, distance, (VISUAL_WIDTH * aspect) / 2 + 0.01); 
+                cameraRef.current.position.set(VISUAL_WIDTH / 2, distance, visualHeight / 2 + 0.01); 
                 break;
             case 'side':
-                cameraRef.current.position.set(VISUAL_WIDTH / 2 + distance, 0, (VISUAL_WIDTH * aspect) / 2);
+                cameraRef.current.position.set(VISUAL_WIDTH / 2 + distance, 0, visualHeight / 2);
                 break;
             case 'iso':
             default:
-                 cameraRef.current.position.set(VISUAL_WIDTH / 2 + distance / 2, distance / 2, (VISUAL_WIDTH * aspect) / 2 + distance / 2);
+                 cameraRef.current.position.set(VISUAL_WIDTH / 2 + distance / 2, distance / 2, visualHeight / 2 + distance / 2);
                 break;
         }
         controlsRef.current.update();
@@ -191,10 +194,9 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 
     const { width, height } = stats.gridSize;
     const aspect = height / width;
-    const geometry = new THREE.PlaneGeometry(VISUAL_WIDTH, VISUAL_WIDTH * aspect, width - 1, height - 1);
-    geometry.translate(VISUAL_WIDTH/2, (VISUAL_WIDTH * aspect)/2, 0); // Move corner to origin
-    geometry.rotateX(-Math.PI / 2);
-
+    const visualHeight = VISUAL_WIDTH * aspect;
+    const geometry = new THREE.PlaneGeometry(VISUAL_WIDTH, visualHeight, 511, 511);
+    
     const material = new THREE.MeshStandardMaterial({
         side: THREE.DoubleSide,
         displacementScale: zScale,
@@ -202,11 +204,21 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     });
     
     meshRef.current = new THREE.Mesh(geometry, material);
+    meshRef.current.rotation.x = -Math.PI / 2;
+    meshRef.current.position.set(VISUAL_WIDTH/2, 0, visualHeight/2);
     sceneRef.current.add(meshRef.current);
 
-    originAxesRef.current = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, VISUAL_WIDTH * aspect) * 0.2);
+    originAxesRef.current = new THREE.AxesHelper(Math.max(VISUAL_WIDTH, visualHeight) * 0.2);
     sceneRef.current.add(originAxesRef.current);
 
+    // Min/Max Markers
+    const markerGeo = new THREE.ConeGeometry(2, 8, 8);
+    const minMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const maxMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    minMarkerRef.current = new THREE.Mesh(markerGeo, minMat);
+    maxMarkerRef.current = new THREE.Mesh(markerGeo, maxMat);
+    sceneRef.current.add(minMarkerRef.current);
+    sceneRef.current.add(maxMarkerRef.current);
 
     const handleResize = () => {
       if (rendererRef.current && cameraRef.current && currentMount) {
@@ -218,7 +230,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     window.addEventListener('resize', handleResize);
 
     const onPointerMove = ( event: PointerEvent ) => {
-      if (!pointerRef.current || !mountRef.current || !raycasterRef.current || !cameraRef.current || !meshRef.current || !DataVault.gridMatrix) {
+      if (!pointerRef.current || !mountRef.current || !raycasterRef.current || !cameraRef.current || !meshRef.current || !DataVault.gridMatrix || !DataVault.displacementBuffer) {
           setHoveredPoint(null);
           return;
       }
@@ -233,7 +245,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
           const uv = intersects[0].uv;
           const { width, height } = stats!.gridSize;
           const gridX = Math.floor(uv.x * width);
-          const gridY = Math.floor(uv.y * height);
+          const gridY = Math.floor((1 - uv.y) * height);
           
           if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
               const pointData = DataVault.gridMatrix[gridY]?.[gridX];
@@ -273,13 +285,37 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         material.displacementScale = zScale;
         material.needsUpdate = true;
     }
-  }, [zScale]);
+     // Update marker positions when zScale changes
+    if (stats && minMarkerRef.current && maxMarkerRef.current) {
+      const { worstLocation, bestLocation, gridSize } = stats;
+      const aspect = gridSize.height / gridSize.width;
+      const visualHeight = VISUAL_WIDTH * aspect;
+
+      if (worstLocation) {
+        const minX = (worstLocation.x / gridSize.width) * VISUAL_WIDTH;
+        const minZ = (worstLocation.y / gridSize.height) * visualHeight;
+        const minY = (worstLocation.value - nominalThickness!) * zScale;
+        minMarkerRef.current.position.set(minX, minY + 4, minZ);
+      }
+      if (bestLocation) {
+        const maxX = (bestLocation.x / gridSize.width) * VISUAL_WIDTH;
+        const maxZ = (bestLocation.y / gridSize.height) * visualHeight;
+        const maxY = (bestLocation.value - nominalThickness!) * zScale;
+        maxMarkerRef.current.position.set(maxX, maxY + 4, maxZ);
+      }
+    }
+  }, [zScale, stats, nominalThickness]);
 
   useEffect(() => {
     if (originAxesRef.current) {
         originAxesRef.current.visible = showOrigin;
     }
   }, [showOrigin]);
+
+  useEffect(() => {
+      if (minMarkerRef.current) minMarkerRef.current.visible = showMinMax;
+      if (maxMarkerRef.current) maxMarkerRef.current.visible = showMinMax;
+  }, [showMinMax]);
   
   if (!inspectionResult) return null;
 

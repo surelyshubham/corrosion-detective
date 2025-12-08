@@ -40,7 +40,8 @@ function computeStats(grid: MergedGrid, nominal: number) {
     let validPointsCount = 0;
     let countND = 0;
     let areaBelow80 = 0, areaBelow70 = 0, areaBelow60 = 0;
-    let worstLocation = { x: 0, y: 0 };
+    let worstLocation = { x: 0, y: 0, value: 0 };
+    let bestLocation = { x: 0, y: 0, value: 0 };
     const height = grid.length;
     const width = grid[0]?.length || 0;
 
@@ -56,9 +57,12 @@ function computeStats(grid: MergedGrid, nominal: number) {
             sumThickness += value;
             if (value < minThickness) {
                 minThickness = value;
-                worstLocation = { x, y };
+                worstLocation = { x, y, value };
             }
-            maxThickness = Math.max(maxThickness, value);
+            if (value > maxThickness) {
+                maxThickness = value;
+                bestLocation = { x, y, value };
+            }
             const percentage = cell.percentage || 0;
             if (percentage < 80) areaBelow80++;
             if (percentage < 70) areaBelow70++;
@@ -81,7 +85,8 @@ function computeStats(grid: MergedGrid, nominal: number) {
         areaBelow60: totalScannedPoints > 0 ? (areaBelow60 / totalScannedPoints) * 100 : 0,
         countND,
         totalPoints: height * width,
-        worstLocation: minThickness === 0 ? {x: 0, y: 0} : worstLocation,
+        worstLocation: minThickness === 0 ? {x: 0, y: 0, value: 0} : worstLocation,
+        bestLocation: maxThickness === 0 ? {x: 0, y: 0, value: 0} : bestLocation,
         gridSize: { width, height },
         scannedArea: totalScannedPoints / 1_000_000, // Assuming 1 point = 1mm^2
     };
@@ -134,9 +139,11 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
      for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const flippedY = height - 1 - y; // Y-axis flip
-            const index = flippedY * width + x;
-            const cell = grid[y][x];
+            const index = y * width + x;
+            const cell = grid[flippedY][x]; // Read from the flipped Y to generate the buffer correctly
+            
             displacementBuffer[index] = cell.effectiveThickness !== null ? cell.effectiveThickness : nominal;
+            
             let rgba: [number, number, number, number];
             if (colorMode === '%') {
                  const normalized = cell.effectiveThickness !== null && range > 0 ? (cell.effectiveThickness - min) / range : null;
@@ -284,5 +291,3 @@ self.onmessage = async (event: MessageEvent<any>) => {
 };
 
 export {};
-
-    

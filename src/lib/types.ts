@@ -40,7 +40,8 @@ export interface InspectionStats {
   areaBelow60: number;
   countND: number;
   totalPoints: number;
-  worstLocation: { x: number; y: number };
+  worstLocation: { x: number; y: number; value: number };
+  bestLocation: { x: number; y: number; value: number };
   gridSize: { width: number; height: number };
   scannedArea: number;
 }

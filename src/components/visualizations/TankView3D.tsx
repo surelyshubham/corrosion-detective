@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { RefreshCw, Percent, Ruler, LocateFixed } from 'lucide-react'
+import { RefreshCw, Percent, Ruler, LocateFixed, Pin } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { useImperativeHandle } from 'react'
 
@@ -36,6 +36,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15) // Represents radial exaggeration
   const [showOrigin, setShowOrigin] = useState(true)
+  const [showMinMax, setShowMinMax] = useState(true);
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
   
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -48,6 +49,8 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   const originAxesRef = useRef<THREE.AxesHelper | null>(null);
   const colorTextureRef = useRef<THREE.DataTexture | null>(null);
   const displacementTextureRef = useRef<THREE.DataTexture | null>(null);
+  const minMarkerRef = useRef<THREE.Mesh | null>(null);
+  const maxMarkerRef = useRef<THREE.Mesh | null>(null);
 
   const { nominalThickness, pipeOuterDiameter, pipeLength } = inspectionResult || {};
   const stats = DataVault.stats;
@@ -190,6 +193,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
             uniform float nominalThickness;
             uniform float pipeRadius;
             varying vec2 vUv;
+            attribute vec3 position;
 
             void main() {
                 vUv = uv;
@@ -224,7 +228,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
     sceneRef.current.add(originAxesRef.current);
     
     const capMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, side: THREE.DoubleSide });
-    const capGeometry = new THREE.CircleGeometry(pipeOuterDiameter / 2, 64);
+    const capGeometry = new THREE.CircleGeometry(pipeOuterDiameter / 2, width > 1 ? width - 1 : 64);
     const topCap = new THREE.Mesh(capGeometry, capMaterial);
     topCap.position.y = pipeLength / 2;
     topCap.rotation.x = -Math.PI / 2;
@@ -233,6 +237,15 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
     bottomCap.rotation.x = Math.PI / 2;
     sceneRef.current.add(topCap);
     sceneRef.current.add(bottomCap);
+
+    // Min/Max Markers
+    const markerGeo = new THREE.ConeGeometry(pipeOuterDiameter / 50, pipeOuterDiameter / 25, 8);
+    const minMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const maxMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    minMarkerRef.current = new THREE.Mesh(markerGeo, minMat);
+    maxMarkerRef.current = new THREE.Mesh(markerGeo, maxMat);
+    sceneRef.current.add(minMarkerRef.current);
+    sceneRef.current.add(maxMarkerRef.current);
 
     const handleResize = () => {
       if (rendererRef.current && cameraRef.current && currentMount) {
@@ -258,8 +271,8 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
       if ( intersects.length > 0 && intersects[0].uv) {
           const uv = intersects[0].uv;
           const { width, height } = stats!.gridSize;
-          const gridX = Math.floor(uv.x * width);
-          const gridY = Math.floor(uv.y * height);
+          const gridX = Math.floor(uv.x * (width - 1));
+          const gridY = Math.floor((1-uv.y) * (height-1));
           
           if (gridX >= 0 && gridX < width && gridY >= 0 && gridY < height) {
               const pointData = DataVault.gridMatrix[gridY]?.[gridX];
@@ -294,10 +307,44 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
   }, [inspectionResult, animate, resetCamera, pipeOuterDiameter, pipeLength, zScale, nominalThickness, stats]);
   
   useEffect(() => {
+    if (meshRef.current) {
+        const material = meshRef.current.material as THREE.ShaderMaterial;
+        material.uniforms.zScale.value = zScale;
+        material.needsUpdate = true;
+    }
+    // Update marker positions when zScale changes
+    if (stats && minMarkerRef.current && maxMarkerRef.current && pipeOuterDiameter && pipeLength && nominalThickness) {
+      const { worstLocation, bestLocation, gridSize } = stats;
+      const pipeRadius = pipeOuterDiameter / 2;
+
+      const placeMarker = (marker: THREE.Mesh, location: any, value: number) => {
+        if (!location) return;
+        const angle = (location.x / (gridSize.width - 1)) * 2 * Math.PI;
+        const h = (location.y / (gridSize.height - 1)) * pipeLength - pipeLength / 2;
+        const loss = nominalThickness - value;
+        const currentRadius = pipeRadius - loss * zScale;
+        const x = currentRadius * Math.cos(angle);
+        const z = currentRadius * Math.sin(angle);
+        marker.position.set(x, h, z);
+        marker.lookAt(new THREE.Vector3(0,h,0));
+        marker.rotateX(Math.PI/2);
+      }
+
+      placeMarker(minMarkerRef.current, worstLocation, worstLocation?.value || 0);
+      placeMarker(maxMarkerRef.current, bestLocation, bestLocation?.value || 0);
+    }
+  }, [zScale, stats, pipeOuterDiameter, pipeLength, nominalThickness]);
+  
+  useEffect(() => {
     if (originAxesRef.current) {
         originAxesRef.current.visible = showOrigin;
     }
   }, [showOrigin]);
+
+  useEffect(() => {
+    if (minMarkerRef.current) minMarkerRef.current.visible = showMinMax;
+    if (maxMarkerRef.current) maxMarkerRef.current.visible = showMinMax;
+  }, [showMinMax]);
   
   
   if (!inspectionResult) return null;
@@ -353,8 +400,12 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
               <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={1} max={50} step={0.5} />
             </div>
              <div className="flex items-center justify-between">
-              <Label htmlFor="origin-switch" className="flex items-center gap-2"><LocateFixed className="h-4 w-4" />Show Origin (0,0)</Label>
+              <Label htmlFor="origin-switch" className="flex items-center gap-2"><LocateFixed className="h-4 w-4" />Show Origin</Label>
               <Switch id="origin-switch" checked={showOrigin} onCheckedChange={setShowOrigin} />
+            </div>
+             <div className="flex items-center justify-between">
+              <Label htmlFor="min-max-switch" className="flex items-center gap-2"><Pin className="h-4 w-4" />Show Min/Max Points</Label>
+              <Switch id="min-max-switch" checked={showMinMax} onCheckedChange={setShowMinMax} />
             </div>
           </CardContent>
         </Card>
