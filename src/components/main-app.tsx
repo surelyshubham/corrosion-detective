@@ -17,6 +17,7 @@ import { ThreeDeeViewTab } from "./tabs/three-dee-view-tab"
 import { ReportTab } from "./tabs/report-tab"
 import { FileUp, GanttChartSquare, Image, Info, Table, FileText, Loader2 } from "lucide-react"
 import { Card, CardContent } from "./ui/card"
+import { DataVault } from "@/store/data-vault"
 
 
 const TABS = [
@@ -45,37 +46,38 @@ export function MainApp() {
     }
   }, [inspectionResult, activeTab, isLoading, toast]);
   
-  useEffect(() => {
-    if (inspectionResult && inspectionResult.stats && !inspectionResult.aiInsight) {
-       generateCorrosionInsight({
-          assetType: inspectionResult.assetType,
-          nominalThickness: inspectionResult.nominalThickness,
-          minThickness: inspectionResult.stats.minThickness,
-          maxThickness: inspectionResult.stats.maxThickness,
-          avgThickness: inspectionResult.stats.avgThickness,
-          areaBelow80: inspectionResult.stats.areaBelow80,
-          areaBelow70: inspectionResult.stats.areaBelow70,
-          areaBelow60: inspectionResult.stats.areaBelow60,
-          worstLocationX: inspectionResult.stats.worstLocation.x,
-          worstLocationY: inspectionResult.stats.worstLocation.y,
-          minPercentage: inspectionResult.stats.minPercentage,
-        }).then(aiInsight => {
-          updateAIInsight(aiInsight);
-          toast({
-            title: "AI Insight Generated",
-            description: "Corrosion analysis and recommendations are now available in the Info tab.",
-          });
-        }).catch(err => {
-          console.error("AI Insight Error:", err);
-           updateAIInsight({ condition: "Error", recommendation: "Could not generate AI insight." });
-          toast({
-            variant: "destructive",
-            title: "AI Insight Failed",
-            description: "Could not generate AI-powered insights for the latest data.",
-          });
-        });
-    }
-  }, [inspectionResult, updateAIInsight, toast]);
+  // Temporarily disabled for rendering test
+  // useEffect(() => {
+  //   if (inspectionResult && DataVault.stats && !inspectionResult.aiInsight) {
+  //      generateCorrosionInsight({
+  //         assetType: inspectionResult.assetType,
+  //         nominalThickness: inspectionResult.nominalThickness,
+  //         minThickness: DataVault.stats.minThickness,
+  //         maxThickness: DataVault.stats.maxThickness,
+  //         avgThickness: DataVault.stats.avgThickness,
+  //         areaBelow80: DataVault.stats.areaBelow80,
+  //         areaBelow70: DataVault.stats.areaBelow70,
+  //         areaBelow60: DataVault.stats.areaBelow60,
+  //         worstLocationX: DataVault.stats.worstLocation.x,
+  //         worstLocationY: DataVault.stats.worstLocation.y,
+  //         minPercentage: DataVault.stats.minPercentage,
+  //       }).then(aiInsight => {
+  //         updateAIInsight(aiInsight);
+  //         toast({
+  //           title: "AI Insight Generated",
+  //           description: "Corrosion analysis and recommendations are now available in the Info tab.",
+  //         });
+  //       }).catch(err => {
+  //         console.error("AI Insight Error:", err);
+  //          updateAIInsight({ condition: "Error", recommendation: "Could not generate AI insight." });
+  //         toast({
+  //           variant: "destructive",
+  //           title: "AI Insight Failed",
+  //           description: "Could not generate AI-powered insights for the latest data.",
+  //         });
+  //       });
+  //   }
+  // }, [inspectionResult, updateAIInsight, toast]);
 
 
   const isDataLoaded = !!inspectionResult;

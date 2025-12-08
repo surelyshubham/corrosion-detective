@@ -7,7 +7,7 @@ import { useInspectionStore } from '@/store/use-inspection-store'
 import { DataVault } from '@/store/data-vault'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Download, ArrowUpDown, Search, AlertTriangle } from 'lucide-react'
+import { Download, ArrowUpDown, Search, AlertTriangle, Plus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { downloadFile } from '@/lib/utils'
 import { ScrollArea } from '../ui/scroll-area'
@@ -24,12 +24,14 @@ interface TableDataPoint extends MergedCell {
 type SortKey = keyof TableDataPoint;
 type SortDirection = 'asc' | 'desc'
 
-const PREVIEW_ROW_COUNT = 100;
+const PREVIEW_ROW_COUNT = 500;
 
 export function DataTableTab() {
   const { inspectionResult, selectedPoint, setSelectedPoint } = useInspectionStore()
   const [filter, setFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PREVIEW_ROW_COUNT);
+
 
   const data = useMemo(() => {
       const mergedGrid = DataVault.gridMatrix;
@@ -81,12 +83,12 @@ export function DataTableTab() {
     return filteredData
   }, [data, filter, sortConfig])
 
-  const previewData = useMemo(() => sortedAndFilteredData.slice(0, PREVIEW_ROW_COUNT), [sortedAndFilteredData]);
+  const previewData = useMemo(() => sortedAndFilteredData.slice(0, visibleCount), [sortedAndFilteredData, visibleCount]);
 
 
   const handleExport = () => {
     if (!inspectionResult) return;
-    const fileName = inspectionResult.plates.map(p => p.fileName.replace('.xlsx', '').replace('.csv', '')).join('_') || 'merged_export';
+    const fileName = 'merged_export';
     const sheet = XLSX.utils.json_to_sheet(sortedAndFilteredData.map(d => ({
         x: d.x,
         y: d.y,
@@ -122,6 +124,8 @@ export function DataTableTab() {
     { key: 'percentage', label: 'Percentage (%)' },
     { key: 'wallLoss', label: 'Wall Loss (mm)' },
   ]
+  
+  const totalRows = sortedAndFilteredData.length;
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -141,12 +145,12 @@ export function DataTableTab() {
         </Button>
       </div>
 
-       {sortedAndFilteredData.length > PREVIEW_ROW_COUNT && (
+       {totalRows > visibleCount && (
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Performance Notice</AlertTitle>
           <AlertDescription>
-            Showing the first {PREVIEW_ROW_COUNT} of {sortedAndFilteredData.length} data points for preview. Use the "Export to Excel" button to get the full dataset.
+            Showing the first {visibleCount} of {totalRows} data points for preview. Use the "Export to Excel" button to get the full dataset.
           </AlertDescription>
         </Alert>
       )}
@@ -187,6 +191,14 @@ export function DataTableTab() {
           </TableBody>
         </Table>
       </ScrollArea>
+       {totalRows > visibleCount && (
+        <div className="flex justify-center py-2">
+            <Button variant="secondary" onClick={() => setVisibleCount(prev => prev + PREVIEW_ROW_COUNT)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Load {Math.min(PREVIEW_ROW_COUNT, totalRows - visibleCount)} More
+            </Button>
+        </div>
+      )}
     </div>
   )
 }
