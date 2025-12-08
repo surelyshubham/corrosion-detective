@@ -19,6 +19,17 @@ interface MasterGrid {
 // The "Worker Vault" - This state persists between messages
 let MASTER_GRID: MasterGrid | null = null;
 
+function universalParse(fileBuffer: ArrayBuffer): any[][] {
+    const workbook = XLSX.read(fileBuffer, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+        throw new Error("No sheets found in the Excel file.");
+    }
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+    return rows;
+}
+
 function getAbsoluteColor(percentage: number | null): [number, number, number, number] {
     if (percentage === null) return [128, 128, 128, 255]; // Grey for ND
     if (percentage < 60) return [255, 0, 0, 255];   // Red
