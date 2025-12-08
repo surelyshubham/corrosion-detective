@@ -1,18 +1,17 @@
 
 "use client"
 
-import React, { useMemo, useState, useRef, useEffect } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { useInspectionStore } from '@/store/use-inspection-store'
 import { DataVault } from '@/store/data-vault'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Download, ArrowUpDown, Search, AlertTriangle, Loader2 } from 'lucide-react'
+import { Download, ArrowUpDown, Search, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { downloadFile } from '@/lib/utils'
 import { ScrollArea } from '../ui/scroll-area'
 import type { MergedCell } from '@/lib/types'
-import { Alert, AlertDescription, AlertTitle } from '../ui/alert'
 
 interface TableDataPoint extends MergedCell {
     x: number;
@@ -31,8 +30,6 @@ export function DataTableTab() {
   const [filter, setFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null)
   const [visibleCount, setVisibleCount] = useState(PREVIEW_ROW_COUNT);
-  const scrollViewportRef = useRef<HTMLDivElement>(null);
-
 
   const data = useMemo(() => {
       const mergedGrid = DataVault.gridMatrix;
@@ -88,13 +85,6 @@ export function DataTableTab() {
   const canLoadMore = visibleCount < totalRows;
 
   const previewData = useMemo(() => sortedAndFilteredData.slice(0, visibleCount), [sortedAndFilteredData, visibleCount]);
-  
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop <= clientHeight * 1.5 && canLoadMore) {
-      setVisibleCount(prev => Math.min(prev + PREVIEW_ROW_COUNT, totalRows));
-    }
-  };
   
    useEffect(() => {
     setVisibleCount(PREVIEW_ROW_COUNT);
@@ -158,7 +148,7 @@ export function DataTableTab() {
         </Button>
       </div>
 
-      <ScrollArea className="border rounded-md flex-grow" onScroll={handleScroll}>
+      <ScrollArea className="border rounded-md flex-grow">
         <Table>
           <TableHeader className="sticky top-0 bg-card z-10">
             <TableRow>
@@ -192,15 +182,14 @@ export function DataTableTab() {
             ))}
           </TableBody>
         </Table>
-         {canLoadMore && (
-          <div className="flex justify-center items-center py-4">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              <span>Loading more...</span>
-          </div>
-        )}
       </ScrollArea>
       <div className="text-sm text-muted-foreground text-center">
         Showing {previewData.length} of {totalRows} data points.
+        {canLoadMore && (
+           <Button variant="link" onClick={() => setVisibleCount(prev => prev + PREVIEW_ROW_COUNT)} className="ml-2">
+              Load more
+           </Button>
+        )}
       </div>
     </div>
   )
