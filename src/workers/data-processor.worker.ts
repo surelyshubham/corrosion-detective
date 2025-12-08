@@ -113,14 +113,14 @@ function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[
             let effectiveThickness: number | null = null;
             let percentage: number | null = null;
             
-            if (cell.rawThickness > 0) {
+            if (cell && cell.rawThickness > 0) {
                 effectiveThickness = Math.min(cell.rawThickness, nominalThickness);
                 percentage = (effectiveThickness / nominalThickness) * 100;
             }
 
             finalGrid[y][x] = {
-                plateId: cell.plateId,
-                rawThickness: cell.rawThickness > 0 ? cell.rawThickness : null,
+                plateId: cell ? cell.plateId : null,
+                rawThickness: cell && cell.rawThickness > 0 ? cell.rawThickness : null,
                 effectiveThickness: effectiveThickness,
                 percentage: percentage,
             };
@@ -138,9 +138,9 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
 
      for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const flippedY = height - 1 - y; // Y-axis flip
+            const flippedY = height - 1 - y;
             const index = y * width + x;
-            const cell = grid[flippedY][x]; // Read from the flipped Y to generate the buffer correctly
+            const cell = grid[flippedY][x]; 
             
             displacementBuffer[index] = cell.effectiveThickness !== null ? cell.effectiveThickness : nominal;
             
@@ -164,8 +164,6 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
 
 // --- Universal Parser ---
 function universalParse(buffer: ArrayBuffer): any[][] {
-    console.log("Worker: UniversalParse received buffer, size:", buffer.byteLength);
-    // 1. Try XLSX parsing first
     try {
         const workbook = XLSX.read(buffer, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
@@ -173,85 +171,120 @@ function universalParse(buffer: ArrayBuffer): any[][] {
             const sheet = workbook.Sheets[sheetName];
             const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
             if (data && data.length > 1) {
-                console.log("Worker: Successfully parsed as XLSX.");
                 return data;
             }
         }
     } catch (e) {
-        console.log("Worker: XLSX parsing failed, falling back to text parsing.", e);
+        // Fallback to text parsing
     }
 
-    // 2. Fallback to Text/CSV parsing
-    console.log("Worker: Attempting text/CSV parsing.");
     const decoder = new TextDecoder('utf-8');
     const text = decoder.decode(buffer);
     const lines = text.split(/[\\r\\n]+/);
     return lines.map(line => {
-        // Robust CSV splitting
         const row = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-        return row.map(cell => cell.trim().replace(/^"|"$/g, '')); // Handle quoted cells
+        return row.map(cell => cell.trim().replace(/^"|"$/g, ''));
     });
 }
 
+function parseFileToGrid(file: {name: string, buffer: ArrayBuffer}) {
+    const rawData = universalParse(file.buffer);
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(100, rawData.length); i++) {
+        if (String(rawData[i][0]).toLowerCase().includes('y') || (String(rawData[i][1]).toLowerCase().includes('x') && String(rawData[i][0]).toLowerCase() === '')) {
+             headerRow = i;
+             break;
+        }
+        if (i === 18) { // Standard format check
+             headerRow = 18;
+             break;
+        }
+    }
+
+    if (headerRow === -1) {
+        throw new Error(`Could not find a valid header row in ${file.name}.`);
+    }
+
+    const dataGrid: {plateId: string, rawThickness: number}[][] = [];
+    for (let r = headerRow + 1; r < rawData.length; r++) {
+        const row = rawData[r];
+        if (!row || (row.length < 2 && row[0] === '')) continue;
+        
+        const cleanRow = row.slice(1).map((val: any) => {
+            const num = parseFloat(val);
+            return isNaN(num) ? -1 : num;
+        });
+
+        if (cleanRow.length > 0 && cleanRow.some(v => v !== -1)) {
+            dataGrid.push(cleanRow.map(val => ({ plateId: file.name, rawThickness: val })));
+        }
+    }
+    return dataGrid;
+}
+
+function mergeGrids(
+    existingGrid: MergedGrid,
+    newRawGrid: {plateId: string, rawThickness: number}[][],
+    direction: 'top' | 'bottom' | 'left' | 'right',
+    start: number
+): {plateId: string, rawThickness: number}[][] {
+    let result: {plateId: string, rawThickness: number}[][] = existingGrid.map(row => row.map(cell => ({
+        plateId: cell.plateId || 'ND',
+        rawThickness: cell.rawThickness || -1
+    })));
+
+    const newHeight = newRawGrid.length;
+    const newWidth = newRawGrid[0]?.length || 0;
+
+    if (direction === 'right') {
+        const totalWidth = start + newWidth;
+        result = result.map(row => row.concat(Array(Math.max(0, totalWidth - row.length)).fill({ plateId: 'ND', rawThickness: -1 })));
+        for(let y = 0; y < newHeight; y++) {
+            if (!result[y]) result[y] = [];
+            for (let x = 0; x < newWidth; x++) {
+                result[y][start + x] = newRawGrid[y][x];
+            }
+        }
+    } else if (direction === 'bottom') {
+        for(let y=0; y < newHeight; y++) {
+            result[start + y] = newRawGrid[y];
+        }
+    }
+    // Implement Left and Top as needed, they require shifting existing data
+    return result;
+}
 
 self.onmessage = async (event: MessageEvent<any>) => {
     const { type } = event.data;
     try {
         if (type === 'PROCESS') {
-            const { files, nominalThickness, colorMode } = event.data;
-            let rawMergedGrid: {plateId: string, rawThickness: number}[][] = [];
+            const { files, nominalThickness, colorMode, existingGrid, merge } = event.data;
+            let rawMergedGrid: {plateId: string, rawThickness: number}[][];
             self.postMessage({ type: 'PROGRESS', progress: 10, message: 'Parsing files...' });
             
-            for (const file of files) {
-                const rawData = universalParse(file.buffer);
-                console.log(`Worker: UniversalParse returned ${rawData.length} rows for file ${file.name}.`);
-
-                // Robust Header Hunt
-                let headerRow = -1;
-                const headerKeywords = ['mm', 'thickness', 'scan', 'index'];
-                for(let i = 0; i < Math.min(100, rawData.length); i++) {
-                    const rowStr = JSON.stringify(rawData[i]).toLowerCase();
-                    if(headerKeywords.some(key => rowStr.includes(key))) {
-                        headerRow = i;
-                        console.log(`Worker: Found header for ${file.name} at row ${i} with content: ${rowStr}`);
-                        break;
+            if (merge && existingGrid) {
+                const newGrid = parseFileToGrid(merge.file);
+                rawMergedGrid = mergeGrids(existingGrid, newGrid, merge.direction, merge.start);
+            } else {
+                rawMergedGrid = [];
+                for (const file of files) {
+                    const dataGrid = parseFileToGrid(file);
+                    if (dataGrid.length === 0) continue;
+                    
+                    if (rawMergedGrid.length === 0) {
+                        rawMergedGrid = dataGrid;
+                    } else {
+                        const targetRows = Math.max(rawMergedGrid.length, dataGrid.length);
+                        const padCell = { plateId: 'ND', rawThickness: -1 };
+                        while (rawMergedGrid.length < targetRows) rawMergedGrid.push(new Array(rawMergedGrid[0].length).fill(padCell));
+                        while (dataGrid.length < targetRows) dataGrid.push(new Array(dataGrid[0].length).fill(padCell));
+                        for (let i = 0; i < targetRows; i++) {
+                            rawMergedGrid[i] = (rawMergedGrid[i] || []).concat(dataGrid[i] || []);
+                        }
                     }
-                }
-                if (headerRow === -1) {
-                    console.warn(`Worker: Could not find a valid header in ${file.name}. Skipping file.`);
-                    continue;
-                }
-
-                const dataGrid: {plateId: string, rawThickness: number}[][] = [];
-                for (let r = headerRow + 1; r < rawData.length; r++) {
-                    const row = rawData[r];
-                    if (!row || row.length < 2) continue;
-                    const cleanRow = row.slice(1).map((val: any) => {
-                        const num = parseFloat(val);
-                        return isNaN(num) ? -1 : num;
-                    });
-                    if (cleanRow.some(v => v !== -1)) { // Only add rows with some valid data
-                        dataGrid.push(cleanRow.map(val => ({ plateId: file.name, rawThickness: val })));
-                    }
-                }
-                console.log(`Worker: Extracted ${dataGrid.length} data rows from ${file.name}.`);
-                
-                if (dataGrid.length === 0) continue;
-                
-                // Merge logic
-                if (rawMergedGrid.length === 0) {
-                    rawMergedGrid = dataGrid;
-                } else {
-                     const targetRows = Math.max(rawMergedGrid.length, dataGrid.length);
-                     const padCell = { plateId: 'ND', rawThickness: -1 };
-                     while(rawMergedGrid.length < targetRows) rawMergedGrid.push(new Array(rawMergedGrid[0].length).fill(padCell));
-                     while(dataGrid.length < targetRows) dataGrid.push(new Array(dataGrid[0].length).fill(padCell));
-                     for(let i=0; i<targetRows; i++) {
-                        rawMergedGrid[i] = (rawMergedGrid[i] || []).concat(dataGrid[i] || []);
-                     }
                 }
             }
-            
+
             if (rawMergedGrid.length === 0 || rawMergedGrid[0].length === 0) {
                 throw new Error("Parsing resulted in empty data grid. Please check file format and content.");
             }
@@ -269,14 +302,14 @@ self.onmessage = async (event: MessageEvent<any>) => {
             const { gridMatrix, nominalThickness, colorMode, stats } = event.data;
             let recomputedStats = stats;
             let recomputedCondition = 'N/A';
-
             let finalGrid = gridMatrix;
 
             if (type === 'REPROCESS') {
-                finalGrid = createFinalGrid(gridMatrix.map((row: MergedCell[]) => row.map(cell => ({ plateId: cell.plateId || 'ND', rawThickness: cell.rawThickness || -1 }))), nominalThickness);
-                 const { stats: newStats, condition: newCondition } = computeStats(finalGrid, nominalThickness);
-                 recomputedStats = newStats;
-                 recomputedCondition = newCondition;
+                const rawGrid = gridMatrix.map((row: MergedCell[]) => row.map((cell: MergedCell) => ({ plateId: cell.plateId || 'ND', rawThickness: cell.rawThickness || -1 })));
+                finalGrid = createFinalGrid(rawGrid, nominalThickness);
+                const { stats: newStats, condition: newCondition } = computeStats(finalGrid, nominalThickness);
+                recomputedStats = newStats;
+                recomputedCondition = newCondition;
             }
            
             const { displacementBuffer, colorBuffer } = createBuffers(finalGrid, nominalThickness, recomputedStats.minThickness, recomputedStats.maxThickness, colorMode);
@@ -291,3 +324,5 @@ self.onmessage = async (event: MessageEvent<any>) => {
 };
 
 export {};
+
+    

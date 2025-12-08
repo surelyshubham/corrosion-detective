@@ -49,6 +49,7 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isMergeAlertOpen, setIsMergeAlertOpen] = useState(false);
+  const [newFileToMerge, setNewFileToMerge] = useState<File | null>(null);
 
   const { control, handleSubmit, watch, formState: { errors }, getValues, setValue } = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
@@ -62,12 +63,7 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
   
   const mergeForm = useForm<MergeFormValues>({
     resolver: zodResolver(mergeSchema),
-    defaultValues: {
-        direction: 'right',
-        start: DataVault.stats ? DataVault.stats.gridSize.width : 0,
-    }
   });
-
 
   useEffect(() => {
     if (inspectionResult) {
@@ -85,44 +81,53 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
   const selectedAssetType = watch('assetType')
   
   const handleFileDrop = async (newFiles: FileList | null) => {
-    if (!newFiles) return;
+    if (!newFiles || newFiles.length === 0) return;
 
-    const validFiles = Array.from(newFiles).filter(file => file.name.endsWith('.xlsx') || file.name.endsWith('.csv'));
+    const validFile = Array.from(newFiles).find(file => file.name.endsWith('.xlsx') || file.name.endsWith('.csv'));
     
-    if (validFiles.length !== newFiles.length) {
+    if (!validFile) {
        setFileError('Invalid file type. Only .xlsx or .csv files are accepted.');
-    } else {
-       setFileError(null);
+       return;
     }
     
-    if (validFiles.length === 0) return;
+    setFileError(null);
 
-    // For now, we only support single file uploads through this mechanism
-    // The store will be updated to handle multi-file processing soon
-    const firstFile = validFiles[0];
-    setFiles([firstFile]);
-
-     try {
-        const arrayBuffer = await firstFile.arrayBuffer();
-        const { detectedNominalThickness } = parseExcel(arrayBuffer);
-        if (detectedNominalThickness !== null) {
-            setValue('nominalThickness', detectedNominalThickness);
-             toast({
-                title: "Nominal Thickness Detected",
-                description: `Set to ${detectedNominalThickness.toFixed(2)} mm based on file metadata. You can edit this value if needed.`,
+    // If data already exists, trigger the merge flow
+    if (inspectionResult && DataVault.gridMatrix) {
+        setNewFileToMerge(validFile);
+        const { width, height } = DataVault.stats?.gridSize || { width: 0, height: 0 };
+        mergeForm.reset({
+            direction: 'right',
+            start: width,
+        });
+        setIsMergeAlertOpen(true);
+    } else {
+        // Otherwise, it's the first file
+        setFiles([validFile]);
+        try {
+            const arrayBuffer = await validFile.arrayBuffer();
+            const { detectedNominalThickness } = parseExcel(arrayBuffer);
+            if (detectedNominalThickness !== null) {
+                setValue('nominalThickness', detectedNominalThickness);
+                 toast({
+                    title: "Nominal Thickness Detected",
+                    description: `Set to ${detectedNominalThickness.toFixed(2)} mm based on file metadata. You can edit this value if needed.`,
+                });
+            }
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Error reading file',
+                description: error.message,
             });
         }
-    } catch (error: any) {
-        toast({
-            variant: 'destructive',
-            title: 'Error reading file',
-            description: error.message,
-        });
     }
   }
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     handleFileDrop(event.target.files);
+    // Clear the input so the same file can be selected again
+    if(event.target) event.target.value = '';
   }
   
   const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => e.preventDefault();
@@ -136,11 +141,11 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
         setFileError('An Excel or CSV file is required.');
         return;
     }
-    const mergeConfig = {
+    const processConfig = {
       pipeOuterDiameter: data.pipeOuterDiameter,
       pipeLength: data.pipeLength,
     };
-    processFiles(files, Number(data.nominalThickness), data.assetType, mergeConfig);
+    processFiles(files, Number(data.nominalThickness), data.assetType, processConfig);
   };
   
   const onDebouncedNominalChange = (value: number) => {
@@ -149,12 +154,42 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
     }
   };
   
+  const handleMergeSubmit = (mergeData: MergeFormValues) => {
+      if (!newFileToMerge) return;
+      
+      const setupData = getValues();
+      const processConfig = {
+          merge: {
+              file: newFileToMerge,
+              direction: mergeData.direction,
+              start: mergeData.start
+          },
+          pipeOuterDiameter: setupData.pipeOuterDiameter,
+          pipeLength: setupData.pipeLength,
+      }
+       processFiles(files, Number(setupData.nominalThickness), setupData.assetType, processConfig);
+       setIsMergeAlertOpen(false);
+       setNewFileToMerge(null);
+  };
+  
 
   const handleClear = () => {
     setFiles([]);
     setInspectionResult(null);
   }
   
+  const watchedMergeDirection = mergeForm.watch('direction');
+  useEffect(() => {
+    const { width, height } = DataVault.stats?.gridSize || { width: 0, height: 0 };
+    let startValue = 0;
+    if (watchedMergeDirection === 'right') startValue = width;
+    if (watchedMergeDirection === 'left') startValue = 0; // Will insert before, user might want negative
+    if (watchedMergeDirection === 'bottom') startValue = height;
+    if (watchedMergeDirection === 'top') startValue = 0; // Will insert before
+    mergeForm.setValue('start', startValue);
+  }, [watchedMergeDirection, mergeForm]);
+
+
   return (
     <div className="grid md:grid-cols-2 gap-6 h-full">
       <Card>
@@ -214,17 +249,30 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
 
             <div className="space-y-2">
               <Label>2. Upload File (.xlsx, .csv)</Label>
-              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx,.csv" className="hidden" disabled={!selectedAssetType || isLoading} multiple />
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx,.csv" className="hidden" disabled={!selectedAssetType || isLoading} multiple={false} />
               
                 {files.length > 0 ? (
-                  <div className="flex items-center justify-between p-3 rounded-md border bg-secondary/50">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Paperclip className="h-4 w-4" />
-                      <span>{files.map(f => f.name).join(', ')}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 rounded-md border bg-secondary/50">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Paperclip className="h-4 w-4" />
+                        <span>{files.map(f => f.name).join(', ')}</span>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFiles([])} disabled={isLoading}>
+                        <X className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFiles([])} disabled={isLoading}>
-                      <X className="h-4 w-4" />
-                    </Button>
+                     <label 
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        className={`flex flex-col items-center justify-center p-3 border-2 border-dashed rounded-md cursor-pointer transition-colors ${!selectedAssetType ? 'cursor-not-allowed bg-muted/50' : 'hover:border-primary hover:bg-accent/20'}`}
+                        onClick={() => selectedAssetType && fileInputRef.current?.click()}
+                        >
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            <Merge className="h-4 w-4 text-muted-foreground" />
+                            <span>Add another file to merge...</span>
+                        </div>
+                     </label>
                   </div>
                 ) : (
                   <label 
@@ -267,17 +315,70 @@ export function SetupTab({ isLoading, onNominalThicknessChange }: SetupTabProps)
               {errors.nominalThickness && <p className="text-sm text-destructive">{errors.nominalThickness.message}</p>}
             </div>
 
-            <Button type="submit" className="w-full" disabled={files.length === 0 || !selectedAssetType || isLoading}>
+            <Button type="submit" className="w-full" disabled={files.length === 0 || !selectedAssetType || isLoading || !!inspectionResult}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? 'Processing...' : (inspectionResult ? 'Process & Merge File' : 'Process File')}
+              {isLoading ? 'Processing...' : 'Process File'}
             </Button>
             {inspectionResult && (
-               <Button variant="link" className="p-0 h-auto mt-2 w-full" onClick={handleClear}>Clear all data</Button>
+               <Button variant="link" className="p-0 h-auto mt-2 w-full" onClick={handleClear}>Clear all data and start over</Button>
             )}
           </form>
         </CardContent>
       </Card>
       
       <DummyDataGenerator isLoading={isLoading} />
+
+      <AlertDialog open={isMergeAlertOpen} onOpenChange={setIsMergeAlertOpen}>
+        <AlertDialogContent>
+            <form onSubmit={mergeForm.handleSubmit(handleMergeSubmit)}>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Merge New Plate</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Configure how to stitch the new C-Scan data (<span className="font-bold">{newFileToMerge?.name}</span>) onto the existing grid.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="py-6 grid gap-6">
+                    <div className="space-y-3">
+                        <Label>1. Stitching Direction</Label>
+                        <Controller
+                            name="direction"
+                            control={mergeForm.control}
+                            render={({field}) => (
+                                 <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="grid grid-cols-2 gap-4">
+                                    <div><RadioGroupItem value="right" id="r-right" /><Label htmlFor="r-right" className="ml-2">Right</Label></div>
+                                    <div><RadioGroupItem value="left" id="r-left" /><Label htmlFor="r-left" className="ml-2">Left</Label></div>
+                                    <div><RadioGroupItem value="bottom" id="r-bottom" /><Label htmlFor="r-bottom" className="ml-2">Bottom</Label></div>
+                                    <div><RadioGroupItem value="top" id="r-top" /><Label htmlFor="r-top" className="ml-2">Top</Label></div>
+                                </RadioGroup>
+                            )}
+                        />
+                    </div>
+                     <div className="space-y-3">
+                        <Label htmlFor="merge-start">2. Start Coordinate</Label>
+                         <Controller
+                            name="start"
+                            control={mergeForm.control}
+                            render={({field}) => (
+                                <Input id="merge-start" type="number" {...field} />
+                            )}
+                         />
+                         <p className="text-xs text-muted-foreground">
+                            Defines the starting row/column for the new plate. For 'Right', this is the X coordinate. For 'Bottom', this is the Y coordinate.
+                         </p>
+                         {mergeForm.formState.errors.start && <p className="text-sm text-destructive">{mergeForm.formState.errors.start.message}</p>}
+                    </div>
+                </div>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setNewFileToMerge(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction type="submit">
+                        <Merge className="mr-2" />
+                        Process & Merge
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </form>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
+}
+    

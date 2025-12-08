@@ -18,13 +18,23 @@ export interface WorkerOutput {
 
 export type ColorMode = 'mm' | '%';
 
+export type ProcessConfig = {
+    pipeOuterDiameter?: number;
+    pipeLength?: number;
+    merge?: {
+        file: File;
+        direction: 'top' | 'bottom' | 'left' | 'right';
+        start: number;
+    }
+}
+
 interface InspectionState {
   inspectionResult: Omit<MergedInspectionResult, 'mergedGrid' | 'stats'> | null;
   setInspectionResult: (result: Omit<MergedInspectionResult, 'mergedGrid' | 'stats'> | null) => void;
   isLoading: boolean;
   loadingProgress: number;
   error: string | null;
-  processFiles: (files: File[], nominalThickness: number, assetType: AssetType, mergeConfig: any) => void;
+  processFiles: (files: File[], nominalThickness: number, assetType: AssetType, config: ProcessConfig) => void;
   selectedPoint: { x: number; y: number } | null;
   setSelectedPoint: (point: { x: number; y: number } | null) => void;
   updateAIInsight: (insight: AIInsight | null) => void;
@@ -63,16 +73,16 @@ export const useInspectionStore = create<InspectionState>()(
                 DataVault.gridMatrix = data.gridMatrix;
                 DataVault.stats = data.stats;
                 
-                const currentState = get().inspectionResult;
+                const currentResult = get().inspectionResult || {} as any;
                 
                 set(state => ({
                     inspectionResult: {
-                        ...(currentState || {}),
-                        plates: [],
+                        ...currentResult,
+                        plates: [...(currentResult.plates || [])], // This needs to be properly updated
                         nominalThickness: data.stats!.nominalThickness,
                         condition: data.condition,
                         aiInsight: null,
-                    } as Omit<MergedInspectionResult, 'mergedGrid' | 'stats'>,
+                    },
                     isLoading: false,
                     error: null,
                     dataVersion: state.dataVersion + 1,
@@ -121,7 +131,7 @@ export const useInspectionStore = create<InspectionState>()(
             });
         },
 
-        processFiles: (files, nominalThickness, assetType, mergeConfig) => {
+        processFiles: async (files, nominalThickness, assetType, config) => {
             if (!worker) {
                 console.error("Worker not initialized!");
                 set({ isLoading: false, error: "Data processing worker is not available." });
@@ -133,22 +143,43 @@ export const useInspectionStore = create<InspectionState>()(
                     ...(state.inspectionResult || {}),
                     nominalThickness,
                     assetType,
-                    ...mergeConfig,
+                    pipeOuterDiameter: config.pipeOuterDiameter,
+                    pipeLength: config.pipeLength,
                 } as any,
              }));
 
-            const fileBuffers = files.map(file => file.arrayBuffer());
-            Promise.all(fileBuffers).then(buffers => {
-                 worker?.postMessage({
+            let message: any;
+
+            if (config.merge) {
+                const buffer = await config.merge.file.arrayBuffer();
+                message = {
+                    type: 'PROCESS',
+                    merge: {
+                        direction: config.merge.direction,
+                        start: config.merge.start,
+                        file: {
+                            name: config.merge.file.name,
+                            buffer: buffer,
+                        },
+                    },
+                    existingGrid: DataVault.gridMatrix,
+                    nominalThickness: nominalThickness,
+                    colorMode: get().colorMode,
+                }
+                 worker?.postMessage(message, [buffer]);
+            } else {
+                 const fileBuffers = await Promise.all(files.map(file => file.arrayBuffer()));
+                 message = {
                     type: 'PROCESS',
                     files: files.map((file, i) => ({
                         name: file.name,
-                        buffer: buffers[i]
+                        buffer: fileBuffers[i]
                     })),
                     nominalThickness: nominalThickness,
                     colorMode: get().colorMode,
-                }, buffers);
-            });
+                }
+                 worker?.postMessage(message, fileBuffers);
+            }
         },
         
         updateAIInsight: (aiInsight) => {
@@ -185,3 +216,5 @@ export const useInspectionStore = create<InspectionState>()(
       }
     }
 );
+
+    
