@@ -141,6 +141,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
       setIsGenerating(true);
       setGenerationProgress({ current: 0, total: 1, task: 'Generating DOCX file...'});
       try {
+        console.log("DOCX segments count:", reportImages.segmentShots?.length);
         const reportData: ReportData = {
             metadata: { ...reportMetadata, defectThreshold: threshold },
             inspection: inspectionResult,
@@ -305,3 +306,5 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     </ScrollArea>
   )
 }
+
+    
