@@ -175,17 +175,26 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   
   // Setup scene effect
   useEffect(() => {
-    if (!mountRef.current || !inspectionResult || !stats || !DataVault.displacementBuffer) {
-        setIsReady(false);
-        return;
-    }
-    // Safety check for empty data
-    if (!stats.gridSize || stats.gridSize.width === 0 || stats.gridSize.height === 0) {
+    if (!mountRef.current || !inspectionResult) {
         setIsReady(false);
         return;
     }
     
-    setIsReady(true);
+    // Check if data is already loaded in the vault
+    if (DataVault.stats && DataVault.displacementBuffer) {
+        setIsReady(true);
+    } else {
+        // If not, wait for it (dataVersion will trigger other effects)
+        setIsReady(false);
+        return;
+    }
+    
+    const currentStats = DataVault.stats;
+    if (!currentStats || !currentStats.gridSize || currentStats.gridSize.width === 0 || currentStats.gridSize.height === 0) {
+        setIsReady(false);
+        return;
+    }
+    
     const currentMount = mountRef.current;
 
     rendererRef.current = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -206,7 +215,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     dirLight.position.set(50, 100, 75);
     sceneRef.current.add(dirLight);
 
-    const { width, height } = stats.gridSize;
+    const { width, height } = currentStats.gridSize;
     const aspect = height / width;
     const visualHeight = VISUAL_WIDTH * aspect;
     // Cap geometry segments for performance
@@ -280,7 +289,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 
       if ( intersects.length > 0 && intersects[0].uv) {
           const uv = intersects[0].uv;
-          const { width, height } = stats!.gridSize;
+          const { width, height } = currentStats.gridSize;
           const gridX = Math.floor(uv.x * width);
           const gridY = Math.floor((1 - uv.y) * height);
           
@@ -314,7 +323,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         currentMount.innerHTML = '';
       }
     };
-  }, [inspectionResult, animate, resetCamera, stats]);
+  }, [inspectionResult, animate, resetCamera, dataVersion]); // Depend on dataVersion to re-init
 
   useEffect(() => {
     if (meshRef.current) {
@@ -457,5 +466,3 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
-
-    
