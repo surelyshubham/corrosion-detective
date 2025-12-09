@@ -54,7 +54,7 @@ export async function generateReportDocx(data: ReportData) {
         new Paragraph({ text: `Scan Date: ${metadata.scanDate ? format(metadata.scanDate, 'PP') : 'N/A'}`, heading: HeadingLevel.HEADING_4 }),
         new Paragraph({ text: '' }),
         new Paragraph({ text: "Overall Inspection Statistics", heading: HeadingLevel.HEADING_2 }),
-        createStatsTable(inspection, metadata.defectThreshold),
+        createStatsTable(inspection, metadata.defectThreshold, segments.length),
         new Paragraph({ text: '' }),
         new Paragraph({ text: "Inspector Notes / Remarks", heading: HeadingLevel.HEADING_2 }),
         new Paragraph(metadata.remarks || "No remarks provided."),
@@ -117,7 +117,7 @@ export async function generateReportDocx(data: ReportData) {
 }
 
 
-const createStatsTable = (inspection: MergedInspectionResult, defectThreshold: number) => {
+const createStatsTable = (inspection: MergedInspectionResult, defectThreshold: number, patchCount: number) => {
     const stats = inspection.stats;
     const rows = [
         new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Overall Condition:", bold: true })] })] }), new TableCell({ children: [new Paragraph(inspection.condition)] }) ] }),
@@ -125,7 +125,7 @@ const createStatsTable = (inspection: MergedInspectionResult, defectThreshold: n
         new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Min Thickness Found:", bold: true })] })] }), new TableCell({ children: [new Paragraph(`${stats.minThickness.toFixed(2)} mm (${stats.minPercentage.toFixed(1)}%)`)] }) ] }),
         new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Avg Thickness:", bold: true })] })] }), new TableCell({ children: [new Paragraph(`${stats.avgThickness.toFixed(2)} mm`)] }) ] }),
         new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Total Scanned Area:", bold: true })] })] }), new TableCell({ children: [new Paragraph(`${stats.scannedArea.toFixed(2)} m²`)] }) ] }),
-        new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `Defect Patches (<${defectThreshold}%):`, bold: true })] })] }), new TableCell({ children: [new Paragraph(String(inspection.segments.length))] }) ] }),
+        new TableRow({ children: [ new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `Defect Patches (<${defectThreshold}%):`, bold: true })] })] }), new TableCell({ children: [new Paragraph(String(patchCount))] }) ] }),
     ];
 
     return new Table({
@@ -149,9 +149,12 @@ const createSegmentTable = (segment: SegmentBox, nominal: number) => {
 
 
 function dataUriToBuffer(dataUri: string) {
+    if (!dataUri || !dataUri.includes(',')) {
+        throw new Error('Invalid data URI');
+    }
     const base64 = dataUri.split(',')[1];
     if (!base64) {
-        throw new Error('Invalid data URI');
+        throw new Error('Invalid data URI, base64 content is missing.');
     }
     const binaryString = atob(base64);
     const len = binaryString.length;

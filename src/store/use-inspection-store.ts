@@ -46,6 +46,7 @@ export type ProcessConfig = {
 interface InspectionState {
   // Final result
   inspectionResult: MergedInspectionResult | null;
+  segments: SegmentBox[] | null;
   
   // Staging state
   stagedFiles: StagedFile[];
@@ -104,9 +105,7 @@ export const useInspectionStore = create<InspectionState>()(
           } else if (type === 'THICKNESS_CONFLICT') {
              set({ isLoading: false, thicknessConflict: data.conflict || null });
           } else if (type === 'SEGMENTS_UPDATED') {
-            set(state => ({
-                inspectionResult: state.inspectionResult ? { ...state.inspectionResult, segments: data.segments! } : null,
-            }));
+            set({ segments: data.segments! });
           } else if (type === 'FINALIZED') {
              if (data.displacementBuffer && data.colorBuffer && data.gridMatrix && data.stats && data.condition && data.plates && data.segments) {
                 
@@ -135,6 +134,7 @@ export const useInspectionStore = create<InspectionState>()(
                 
                 set(state => ({
                     inspectionResult: newResult,
+                    segments: data.segments,
                     isFinalizing: false,
                     error: null,
                     dataVersion: state.dataVersion + 1,
@@ -148,6 +148,7 @@ export const useInspectionStore = create<InspectionState>()(
 
       return {
         inspectionResult: null,
+        segments: null,
         stagedFiles: [],
         projectDimensions: null,
         thicknessConflict: null,
@@ -235,6 +236,7 @@ export const useInspectionStore = create<InspectionState>()(
             DataVault.stats = null;
             set({ 
                 inspectionResult: null, 
+                segments: null,
                 stagedFiles: [],
                 projectDimensions: null,
                 selectedPoint: null, 

@@ -26,7 +26,7 @@ export type PlateView2DRef = {
 interface PlateView2DProps {}
 
 export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, ref) => {
-  const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion } = useInspectionStore()
+  const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion, segments } = useInspectionStore()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const xAxisRef = useRef<HTMLDivElement>(null);
@@ -47,24 +47,7 @@ export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, 
     capture: () => {
       const canvas = canvasRef.current;
       if (!canvas) return '';
-      // Create a temporary canvas to draw everything for capture
-      const captureCanvas = document.createElement('canvas');
-      const { width, height } = gridSize || {width: 0, height: 0};
-      captureCanvas.width = width * scaledCellSize + AXIS_SIZE;
-      captureCanvas.height = height * scaledCellSize + AXIS_SIZE;
-      const ctx = captureCanvas.getContext('2d');
-      if (!ctx) return '';
-      
-      ctx.fillStyle = '#242427'; // Match card background
-      ctx.fillRect(0, 0, captureCanvas.width, captureCanvas.height);
-      
-      // Draw main heatmap
-      ctx.drawImage(canvas, AXIS_SIZE, 0);
-
-      // We can't easily draw the React-based axes here.
-      // A more robust solution would be to draw axes on a separate canvas.
-      // For now, we return the heatmap itself. A full solution would composite them.
-      return captureCanvas.toDataURL('image/png');
+      return canvas.toDataURL('image/png');
     }
   }));
 
@@ -82,8 +65,8 @@ export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Draw heatmap
     const imageData = new ImageData(new Uint8ClampedArray(DataVault.colorBuffer), width, height);
-
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width;
     tempCanvas.height = height;
@@ -94,13 +77,29 @@ export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, 
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(tempCanvas, 0, 0, width, height, 0, 0, canvasWidth, canvasHeight);
     
+    // Draw segment bounding boxes
+    if (segments) {
+        ctx.strokeStyle = '#ff00ff'; // Magenta for visibility
+        ctx.lineWidth = Math.max(1, 2 * zoom / 10);
+        segments.forEach(segment => {
+            const { xMin, xMax, yMin, yMax } = segment.coordinates;
+            ctx.strokeRect(
+                xMin * scaledCellSize,
+                yMin * scaledCellSize,
+                (xMax - xMin + 1) * scaledCellSize,
+                (yMax - yMin + 1) * scaledCellSize
+            );
+        });
+    }
+
+    // Draw selected point
     if (selectedPoint) {
         ctx.strokeStyle = '#00ffff'; // Cyan
         ctx.lineWidth = Math.max(1.5, 3 * zoom / 10);
         ctx.strokeRect(selectedPoint.x * scaledCellSize, selectedPoint.y * scaledCellSize, scaledCellSize, scaledCellSize);
     }
     
-  }, [gridSize, dataVersion, zoom, scaledCellSize, selectedPoint]);
+  }, [gridSize, dataVersion, zoom, scaledCellSize, selectedPoint, segments]);
 
   useEffect(() => {
     draw();

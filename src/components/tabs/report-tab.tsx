@@ -26,7 +26,7 @@ interface ReportTabProps {
 }
 
 export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
-  const { inspectionResult, setSegmentsForThreshold } = useInspectionStore();
+  const { inspectionResult, setSegmentsForThreshold, segments } = useInspectionStore();
   const { toast } = useToast();
   
   const {
@@ -51,18 +51,23 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   const captureFunctions3D = threeDViewRef.current;
   const captureFunctions2D = twoDViewRef.current;
   const isCaptureReady = !!captureFunctions3D?.capture && !!captureFunctions2D?.capture;
-  const segments = inspectionResult?.segments || [];
 
   useEffect(() => {
     resetReportState();
-  }, [inspectionResult, resetReportState]);
+    if (inspectionResult) {
+      // Trigger initial segmentation when data is loaded
+      setSegmentsForThreshold(defectThreshold);
+    }
+  }, [inspectionResult, resetReportState, setSegmentsForThreshold, defectThreshold]);
 
   const handleThresholdChange = (value: number[]) => {
     const newThreshold = value[0];
     setDefectThreshold(newThreshold);
-    if (!isThresholdLocked) {
-      setSegmentsForThreshold(newThreshold);
-    }
+  }
+  
+  const handleThresholdCommit = (value: number[]) => {
+    const newThreshold = value[0];
+    setSegmentsForThreshold(newThreshold);
   }
 
   const handleGenerateAndCapture = async () => {
@@ -76,7 +81,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     }
     
     setIsGenerating(true);
-    const totalSteps = 2 + segments.length;
+    const totalSteps = 2 + (segments?.length || 0);
     setGenerationProgress({ current: 0, total: totalSteps, task: 'Starting...' });
 
     try {
@@ -92,13 +97,15 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
       
       // 3. Capture Segment Shots
       const segmentShots: { segmentId: number; imageDataUrl: string }[] = [];
-      for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i];
-        setGenerationProgress({ current: 3 + i, total: totalSteps, task: `Capturing segment #${segment.id}...` });
-        captureFunctions3D.focus(segment.center.x, segment.center.y, true);
-        await new Promise(resolve => setTimeout(resolve, 500)); // allow camera to move
-        const shot = captureFunctions3D.capture();
-        segmentShots.push({ segmentId: segment.id, imageDataUrl: shot });
+      if (segments) {
+        for (let i = 0; i < segments.length; i++) {
+          const segment = segments[i];
+          setGenerationProgress({ current: 3 + i, total: totalSteps, task: `Capturing segment #${segment.id}...` });
+          captureFunctions3D.focus(segment.center.x, segment.center.y, true);
+          await new Promise(resolve => setTimeout(resolve, 500)); // allow camera to move
+          const shot = captureFunctions3D.capture();
+          segmentShots.push({ segmentId: segment.id, imageDataUrl: shot });
+        }
       }
       captureFunctions3D.resetCamera();
       
@@ -122,7 +129,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   };
   
   const handleGenerateFinalReport = async () => {
-      if (!reportImages || !reportMetadata || !inspectionResult) {
+      if (!reportImages || !reportMetadata || !inspectionResult || !segments) {
         toast({
             variant: "destructive",
             title: "Cannot Generate Report",
@@ -196,12 +203,13 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                             step={5}
                             value={[defectThreshold]}
                             onValueChange={handleThresholdChange}
+                            onValueCommit={handleThresholdCommit}
                             disabled={isThresholdLocked}
                         />
                     </div>
                     <div className="flex flex-col items-center gap-2">
                         <p className="text-sm text-center text-muted-foreground font-medium">
-                            Detected Patches: <span className="font-bold text-foreground text-base">{segments.length}</span>
+                            Detected Patches: <span className="font-bold text-foreground text-base">{segments?.length || 0}</span>
                         </p>
                         <Button 
                             className="w-full"
