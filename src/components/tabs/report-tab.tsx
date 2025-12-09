@@ -26,8 +26,12 @@ interface ReportTabProps {
 }
 
 export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
-  const { inspectionResult, setSegmentsForThreshold, segments } = useInspectionStore();
+  const { inspectionResult, segments } = useInspectionStore();
   const { toast } = useToast();
+  
+  const threshold = useInspectionStore((s) => s.defectThreshold);
+  const setThreshold = useInspectionStore((s) => s.setDefectThreshold);
+  const setSegmentsForThreshold = useInspectionStore((s) => s.setSegmentsForThreshold);
   
   const {
     isGenerating,
@@ -40,8 +44,6 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     setReportMetadata,
     generationProgress,
     setGenerationProgress,
-    defectThreshold,
-    setDefectThreshold,
     isThresholdLocked,
     setIsThresholdLocked,
   } = useReportStore();
@@ -55,14 +57,13 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   useEffect(() => {
     resetReportState();
     if (inspectionResult) {
-      // Trigger initial segmentation when data is loaded
-      setSegmentsForThreshold(defectThreshold);
+      setSegmentsForThreshold(threshold);
     }
-  }, [inspectionResult, resetReportState, setSegmentsForThreshold, defectThreshold]);
+  }, [inspectionResult, resetReportState, setSegmentsForThreshold, threshold]);
 
   const handleThresholdChange = (value: number[]) => {
     const newThreshold = value[0];
-    setDefectThreshold(newThreshold);
+    setThreshold(newThreshold);
   }
   
   const handleThresholdCommit = (value: number[]) => {
@@ -141,7 +142,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
       setGenerationProgress({ current: 0, total: 1, task: 'Generating DOCX file...'});
       try {
         const reportData: ReportData = {
-            metadata: { ...reportMetadata, defectThreshold },
+            metadata: { ...reportMetadata, defectThreshold: threshold },
             inspection: inspectionResult,
             segments: segments,
             images: reportImages,
@@ -184,7 +185,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                 <div className="grid md:grid-cols-2 gap-4 items-center">
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <Label htmlFor="defectThreshold">Threshold: {defectThreshold}%</Label>
+                            <Label htmlFor="defectThreshold">Threshold: {threshold}%</Label>
                             <TooltipProvider>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
@@ -201,7 +202,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                             min={10}
                             max={95}
                             step={5}
-                            value={[defectThreshold]}
+                            value={[threshold]}
                             onValueChange={handleThresholdChange}
                             onValueCommit={handleThresholdCommit}
                             disabled={isThresholdLocked}

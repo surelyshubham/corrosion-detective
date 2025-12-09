@@ -68,6 +68,10 @@ interface InspectionState {
   addFileToStage: (file: File, config: ProcessConfig, mergeConfig: MergeFormValues | null) => void;
   finalizeProject: () => void;
   resetProject: () => void;
+  
+  // Segmentation
+  defectThreshold: number;
+  setDefectThreshold: (threshold: number) => void;
   setSegmentsForThreshold: (threshold: number) => void;
   
   // Interactive state
@@ -160,6 +164,7 @@ export const useInspectionStore = create<InspectionState>()(
         dataVersion: 0,
         error: null,
         activeTab: 'setup',
+        defectThreshold: 80,
 
         setActiveTab: (tab) => set({ activeTab: tab }),
         setSelectedPoint: (point) => set({ selectedPoint: point }),
@@ -182,7 +187,8 @@ export const useInspectionStore = create<InspectionState>()(
         setColorMode: (mode) => {
             const currentResult = get().inspectionResult;
             if (!worker || !currentResult) return;
-            set({ isFinalizing: true, loadingProgress: 50, error: null });
+            // Prevent color changes from showing finalization screen
+            // set({ isFinalizing: true, loadingProgress: 50, error: null });
             
              worker.postMessage({
                 type: 'RECOLOR',
@@ -219,9 +225,10 @@ export const useInspectionStore = create<InspectionState>()(
         finalizeProject: () => {
             if (!worker || get().stagedFiles.length === 0) return;
             set({ isFinalizing: true, loadingProgress: 0, error: null });
-            worker.postMessage({ type: 'FINALIZE', colorMode: get().colorMode, threshold: useReportStore.getState().defectThreshold });
+            worker.postMessage({ type: 'FINALIZE', colorMode: get().colorMode, threshold: get().defectThreshold });
         },
         
+        setDefectThreshold: (threshold) => set({ defectThreshold: threshold }),
         setSegmentsForThreshold: (threshold) => {
             if (!worker || !get().inspectionResult) return;
             worker.postMessage({ type: 'RESEGMENT', threshold: threshold });
@@ -251,5 +258,3 @@ export const useInspectionStore = create<InspectionState>()(
       }
     }
 );
-// This import is needed to break a circular dependency, do not remove
-import { useReportStore } from './use-report-store';
