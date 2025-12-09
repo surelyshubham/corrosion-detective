@@ -72,16 +72,16 @@ export const useInspectionStore = create<InspectionState>()(
                 DataVault.stats = data.stats;
                 
                 const currentResult = get().inspectionResult;
+                const assetType = currentResult?.assetType || (get() as any).assetType || 'Plate';
                 
                 const newResult: MergedInspectionResult = {
-                    ...currentResult,
                     plates: data.plates,
                     mergedGrid: data.gridMatrix,
                     nominalThickness: data.stats.nominalThickness,
                     stats: data.stats,
                     condition: data.condition,
-                    aiInsight: currentResult?.aiInsight || null, // Preserve existing AI insight if any
-                    assetType: currentResult?.assetType || 'Plate',
+                    aiInsight: currentResult?.aiInsight || null, // Preserve existing AI insight
+                    assetType: assetType,
                     pipeOuterDiameter: currentResult?.pipeOuterDiameter,
                     pipeLength: currentResult?.pipeLength
                 };
@@ -125,20 +125,13 @@ export const useInspectionStore = create<InspectionState>()(
         processFirstFile: async (file, nominalThickness, assetType, config) => {
             if (!worker) return;
             set({ isLoading: true, loadingProgress: 0, error: null, inspectionResult: null });
-             // Temporarily set a shell of the result so the UI can lock asset type etc.
-             set({ 
-                inspectionResult: {
-                    nominalThickness,
-                    assetType,
-                    pipeOuterDiameter: config.pipeOuterDiameter,
-                    pipeLength: config.pipeLength,
-                    plates: [],
-                    mergedGrid: [],
-                    stats: {} as InspectionStats,
-                    condition: 'N/A',
-                    aiInsight: null
-                },
-             });
+            
+            // This is a temporary shell, the worker will send the full data
+            const tempResult: MergedInspectionResult = {
+                nominalThickness, assetType, ...config,
+                plates: [], mergedGrid: [], stats: {} as InspectionStats, condition: 'N/A', aiInsight: null
+            };
+            set({ inspectionResult: tempResult });
 
             const buffer = await file.arrayBuffer();
             const message = {
@@ -146,9 +139,8 @@ export const useInspectionStore = create<InspectionState>()(
                 file: { name: file.name, buffer: buffer },
                 nominalThickness,
                 colorMode: get().colorMode,
-                assetType: assetType,
-                pipeOuterDiameter: config.pipeOuterDiameter,
-                pipeLength: config.pipeLength,
+                assetType,
+                ...config
             };
             worker?.postMessage(message, [buffer]);
         },
@@ -206,5 +198,3 @@ export const useInspectionStore = create<InspectionState>()(
       }
     }
 );
-
-    

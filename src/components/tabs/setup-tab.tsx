@@ -47,10 +47,10 @@ export function SetupTab() {
   const { control, handleSubmit, watch, formState: { errors }, setValue } = useForm<SetupFormValues>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
-      nominalThickness: inspectionResult?.nominalThickness || 6,
-      assetType: inspectionResult?.assetType,
-      pipeOuterDiameter: inspectionResult?.pipeOuterDiameter || 1000,
-      pipeLength: inspectionResult?.pipeLength || 1000,
+      nominalThickness: 6,
+      assetType: undefined,
+      pipeOuterDiameter: 1000,
+      pipeLength: 1000,
     },
   })
   
@@ -61,6 +61,11 @@ export function SetupTab() {
       if(inspectionResult.pipeOuterDiameter) setValue('pipeOuterDiameter', inspectionResult.pipeOuterDiameter);
       if(inspectionResult.pipeLength) setValue('pipeLength', inspectionResult.pipeLength);
       setFiles(inspectionResult.plates.map(p => new File([], p.fileName)));
+    } else {
+        // Reset form to defaults when project is cleared
+        setValue('assetType', undefined);
+        setValue('nominalThickness', 6);
+        setFiles([]);
     }
   }, [inspectionResult, setValue]);
 

@@ -37,19 +37,21 @@ export function MainApp() {
 
   // Effect to automatically switch tabs after processing
   useEffect(() => {
-    if (inspectionResult && !isLoading) {
-      if (inspectionResult.plates.length === 1 && activeTab === 'setup') {
-         setActiveTab("info");
-         toast({
-            title: "Processing Complete",
-            description: `Data has been successfully processed and loaded.`,
-          })
-      } else if (inspectionResult.plates.length > 1) {
-          toast({
-            title: "Merge Complete",
-            description: `Successfully merged ${inspectionResult.plates.length} plates.`,
-          })
-      }
+    if (inspectionResult && !isLoading && activeTab === 'setup') {
+        // Only switch away from setup ONCE on the very first file load
+        if (inspectionResult.plates.length === 1) {
+            setActiveTab("info");
+            toast({
+                title: "Processing Complete",
+                description: `Data for ${inspectionResult.plates[0].fileName} has been loaded.`,
+            });
+        } else if (inspectionResult.plates.length > 1) {
+            // For subsequent merges, just show a toast but STAY on the setup tab
+            toast({
+                title: "Merge Complete",
+                description: `Successfully merged ${inspectionResult.plates.length} plates. You can add another file.`,
+            });
+        }
     }
   }, [inspectionResult, isLoading, toast, activeTab]);
   
