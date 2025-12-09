@@ -106,7 +106,6 @@ export const useInspectionStore = create<InspectionState>()(
           } else if (type === 'SEGMENTS_UPDATED') {
             set(state => ({
                 inspectionResult: state.inspectionResult ? { ...state.inspectionResult, segments: data.segments! } : null,
-                dataVersion: state.dataVersion + 1, // To trigger re-renders that depend on segments
             }));
           } else if (type === 'FINALIZED') {
              if (data.displacementBuffer && data.colorBuffer && data.gridMatrix && data.stats && data.condition && data.plates && data.segments) {
@@ -219,7 +218,7 @@ export const useInspectionStore = create<InspectionState>()(
         finalizeProject: () => {
             if (!worker || get().stagedFiles.length === 0) return;
             set({ isFinalizing: true, loadingProgress: 0, error: null });
-            worker.postMessage({ type: 'FINALIZE', colorMode: get().colorMode, threshold: get().inspectionResult?.segments[0]?.coordinates ? 80 : useReportStore.getState().defectThreshold });
+            worker.postMessage({ type: 'FINALIZE', colorMode: get().colorMode, threshold: useReportStore.getState().defectThreshold });
         },
         
         setSegmentsForThreshold: (threshold) => {
@@ -252,5 +251,3 @@ export const useInspectionStore = create<InspectionState>()(
 );
 // This import is needed to break a circular dependency, do not remove
 import { useReportStore } from './use-report-store';
-
-    

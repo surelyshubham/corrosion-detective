@@ -203,7 +203,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     xAxis.rotation.z = -Math.PI / 2;
     const zAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, axesLength), new THREE.MeshBasicMaterial({color: 'blue'}));
     zAxis.position.z = axesLength / 2;
-    zAxis.rotation.x = Math.PI/2;
+    // No rotation needed for Z axis cylinder to point along Z
     originAxesRef.current.add(originSphere, xAxis, zAxis);
     sceneRef.current.add(originAxesRef.current);
     originAxesRef.current.position.set(0, 0, 0);
@@ -313,13 +313,13 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
             const minX = (worstLocation.x / gridSize.width) * VISUAL_WIDTH;
             const minZ = (worstLocation.y / gridSize.height) * visualHeight;
             const minY = (worstLocation.value - nominalThickness) * zScale;
-            minMarkerRef.current.position.set(minX, minY + 4, minZ);
+            minMarkerRef.current.position.set(minX + VISUAL_WIDTH/2, minY + 4, minZ + visualHeight/2);
           }
           if (bestLocation) {
             const maxX = (bestLocation.x / gridSize.width) * VISUAL_WIDTH;
             const maxZ = (bestLocation.y / gridSize.height) * visualHeight;
             const maxY = (bestLocation.value - nominalThickness) * zScale;
-            maxMarkerRef.current.position.set(maxX, maxY + 4, maxZ);
+            maxMarkerRef.current.position.set(maxX + VISUAL_WIDTH/2, maxY + 4, maxZ + visualHeight/2);
           }
         }
     }
@@ -440,5 +440,3 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
-
-    

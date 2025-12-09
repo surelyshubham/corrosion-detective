@@ -26,7 +26,7 @@ interface ReportTabProps {
 }
 
 export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
-  const { inspectionResult } = useInspectionStore();
+  const { inspectionResult, setSegmentsForThreshold } = useInspectionStore();
   const { toast } = useToast();
   
   const {
@@ -57,12 +57,13 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     resetReportState();
   }, [inspectionResult, resetReportState]);
 
-  useEffect(() => {
+  const handleThresholdChange = (value: number[]) => {
+    const newThreshold = value[0];
+    setDefectThreshold(newThreshold);
     if (!isThresholdLocked) {
-       useInspectionStore.getState().setSegmentsForThreshold(defectThreshold);
+      setSegmentsForThreshold(newThreshold);
     }
-  }, [defectThreshold, isThresholdLocked]);
-
+  }
 
   const handleGenerateAndCapture = async () => {
     if (!isCaptureReady) {
@@ -194,7 +195,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                             max={95}
                             step={5}
                             value={[defectThreshold]}
-                            onValueChange={(value) => setDefectThreshold(value[0])}
+                            onValueChange={handleThresholdChange}
                             disabled={isThresholdLocked}
                         />
                     </div>
@@ -295,5 +296,3 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     </ScrollArea>
   )
 }
-
-    

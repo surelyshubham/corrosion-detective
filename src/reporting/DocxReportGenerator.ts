@@ -22,8 +22,6 @@ const logoBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAAAoCAYAAA
 export async function generateReportDocx(data: ReportData) {
   const { metadata, inspection, segments, images } = data;
 
-  const logoBuffer = dataUriToBuffer(logoBase64);
-
   const doc = new Document({
     sections: [{
       headers: {
@@ -33,7 +31,7 @@ export async function generateReportDocx(data: ReportData) {
               children: [
                 new TableCell({
                   children: [new Paragraph({
-                    children: [new ImageRun({ data: logoBuffer, transformation: { width: 150, height: 38 } })],
+                    children: [new ImageRun({ data: dataUriToBuffer(logoBase64), transformation: { width: 150, height: 38 } })],
                   })],
                   borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.SINGLE, size: 4, color: "4287f5" }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
                 }),
@@ -163,5 +161,3 @@ function dataUriToBuffer(dataUri: string) {
     }
     return bytes.buffer;
 }
-
-    
