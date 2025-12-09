@@ -68,7 +68,7 @@ interface InspectionState {
   setActiveTab: (tab: string) => void;
 
   // Actions
-  addFileToStage: (file: File, config: ProcessConfig, mergeConfig: MergeFormValues | null) => void;
+  addFileToStage: (file: File, config: Omit<ProcessConfig, 'nominalThickness'> & { nominalThickness: number | string }, mergeConfig: MergeFormValues | null) => void;
   finalizeProject: () => void;
   resetProject: () => void;
   
@@ -238,17 +238,22 @@ export const useInspectionStore = create<InspectionState>()(
             const buffer = await file.arrayBuffer();
             const isFirstFile = get().stagedFiles.length === 1;
 
+            const sanitizedConfig = {
+              ...config,
+              nominalThickness: Number(config.nominalThickness) || 0,
+            };
+
             if (isFirstFile) {
                 worker?.postMessage({
                     type: 'INIT',
                     file: { name: file.name, buffer: buffer },
-                    config: config
+                    config: sanitizedConfig
                 }, [buffer]);
             } else {
                  worker?.postMessage({
                     type: 'MERGE',
                     file: { name: file.name, buffer: buffer },
-                    config: config,
+                    config: sanitizedConfig,
                     mergeConfig: mergeConfig,
                 }, [buffer]);
             }

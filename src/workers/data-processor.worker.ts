@@ -85,7 +85,8 @@ function getNormalizedColor(normalizedPercent: number | null): [number, number, 
     return [(r + m) * 255, (g + m) * 255, (b + m) * 255, 255];
 }
 
-function computeStats(grid: MergedGrid, nominal: number) {
+function computeStats(grid: MergedGrid, nominalInput: number) {
+    const nominal = Number(nominalInput) || 0;
     let minThickness = Infinity, maxThickness = -Infinity, sumThickness = 0;
     let validPointsCount = 0, countND = 0, areaBelow80 = 0, areaBelow70 = 0, areaBelow60 = 0;
     let worstLocation = { x: 0, y: 0, value: 0 }, bestLocation = { x: 0, y: 0, value: 0 };
@@ -116,8 +117,8 @@ function computeStats(grid: MergedGrid, nominal: number) {
         }
     }
     
-    minThickness = minThickness === Infinity ? 0 : minThickness;
-    maxThickness = maxThickness === -Infinity ? 0 : maxThickness;
+    minThickness = isFinite(minThickness) ? minThickness : 0;
+    maxThickness = isFinite(maxThickness) ? maxThickness : 0;
     
     const avgThickness = validPointsCount > 0 ? sumThickness / validPointsCount : 0;
     const minPercentage = nominal > 0 ? (minThickness / nominal) * 100 : 0;
@@ -146,7 +147,8 @@ function computeStats(grid: MergedGrid, nominal: number) {
     return { stats: { ...stats, nominalThickness: nominal }, condition };
 }
 
-function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[][], nominalThickness: number): MergedGrid {
+function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[][], nominalInput: number): MergedGrid {
+    const nominal = Number(nominalInput) || 0;
     const height = rawMergedGrid.length;
     const width = rawMergedGrid[0]?.length || 0;
     const finalGrid: MergedGrid = Array(height).fill(null).map(() => Array(width).fill(null));
@@ -156,8 +158,8 @@ function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[
             const cell = rawMergedGrid[y][x];
             let effectiveThickness: number | null = null, percentage: number | null = null;
             if (cell && cell.rawThickness > 0) {
-                effectiveThickness = Math.min(cell.rawThickness, nominalThickness);
-                percentage = nominalThickness > 0 ? (effectiveThickness / nominalThickness) * 100 : 0;
+                effectiveThickness = Math.min(cell.rawThickness, nominal);
+                percentage = nominal > 0 ? (effectiveThickness / nominal) * 100 : 0;
             }
             finalGrid[y][x] = {
                 plateId: cell ? cell.plateId : null,
@@ -169,7 +171,8 @@ function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[
     return finalGrid;
 }
 
-function createBuffers(grid: MergedGrid, nominal: number, min: number, max: number, colorMode: ColorMode) {
+function createBuffers(grid: MergedGrid, nominalInput: number, min: number, max: number, colorMode: ColorMode) {
+    const nominal = Number(nominalInput) || 0;
     const height = grid.length, width = grid[0]?.length || 0;
     const displacementBuffer = new Float32Array(width * height);
     const colorBuffer = new Uint8Array(width * height * 4);
@@ -195,7 +198,7 @@ function parseFileToGrid(rows: any[][], fileName: string) {
     let headerRow = -1;
     for (let i = 0; i < Math.min(100, rows.length); i++) {
         if (String(rows[i][0]).trim().toLowerCase() === 'y-pos' && String(rows[i][1]).trim().toLowerCase() === 'x-pos') { headerRow = i; break; }
-        if (String(rows[i][0]).trim() === '' && !isNaN(parseFloat(rows[i][1]))) { headerRow = i; break; }
+        if (String(rows[i][0]).trim() === '' && !isNaN(parseFloat(String(rows[i][1])))) { headerRow = i; break; }
         if (i === 18) { headerRow = 18; break; }
     }
     if (headerRow === -1) throw new Error(`Could not find a valid header row in ${fileName}.`);
@@ -204,13 +207,14 @@ function parseFileToGrid(rows: any[][], fileName: string) {
     for (let r = headerRow + 1; r < rows.length; r++) {
         const row = rows[r];
         if (!row || (row.length < 2 && (row[0] === '' || row[0] === undefined)) || isNaN(parseFloat(String(row[0])))) continue;
-        const cleanRow = row.slice(1).map((val: any) => ({ plateId: fileName, rawThickness: parseFloat(val) > 0 ? parseFloat(val) : -1 }));
+        const cleanRow = row.slice(1).map((val: any) => ({ plateId: fileName, rawThickness: parseFloat(String(val)) > 0 ? parseFloat(String(val)) : -1 }));
         if (cleanRow.length > 0) dataGrid.push(cleanRow);
     }
     return dataGrid;
 }
 
-function segmentAndAnalyze(grid: MergedGrid, nominal: number, threshold: number): SegmentBox[] {
+function segmentAndAnalyze(grid: MergedGrid, nominalInput: number, threshold: number): SegmentBox[] {
+    const nominal = Number(nominalInput) || 0;
     const height = grid.length, width = grid[0]?.length || 0;
     const visited: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
     const segments: SegmentBox[] = [];
@@ -386,5 +390,3 @@ self.onmessage = async (event: MessageEvent<any>) => {
 };
 
 export {};
-
-    
