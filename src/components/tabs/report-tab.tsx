@@ -20,7 +20,7 @@ import { ScrollArea } from '../ui/scroll-area'
 import { Camera, Download, Edit, FileText, Info, Loader2, Lock, Pencil } from 'lucide-react'
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '../ui/carousel'
 import Image from 'next/image'
-import { generatePatchInsight } from '@/ai/flows/generate-patch-summary'
+import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import type { SegmentBox } from '@/lib/types'
 
 interface ReportTabProps {
@@ -39,8 +39,6 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   const {
     isGenerating,
     setIsGenerating,
-    reportImages,
-    setReportImages,
     resetReportState,
     reportMetadata,
     detailsSubmitted,
@@ -77,7 +75,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   }
 
   const handleGenerateAndCapture = async () => {
-    if (!isCaptureReady) {
+    if (!isCaptureReady || !captureFunctions3D || !captureFunctions2D) {
       toast({
         variant: "destructive",
         title: "Views Not Ready",
@@ -105,11 +103,12 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
         const segment = segments[i];
         const progressBase = i * 5;
 
-        // --- Capture Views ---
-        setGenerationProgress({ current: progressBase + 1, total: totalSteps, task: `Capturing ISO view for Patch #${segment.id}` });
+        // --- Focus on the segment in both views
         captureFunctions3D.focus(segment.center.x, segment.center.y, true);
-        
-        await new Promise(resolve => setTimeout(resolve, 250));
+        await new Promise(resolve => setTimeout(resolve, 250)); // Wait for camera to move
+
+        // --- Capture 3D Views ---
+        setGenerationProgress({ current: progressBase + 1, total: totalSteps, task: `Capturing ISO view for Patch #${segment.id}` });
         captureFunctions3D.setView('iso');
         await new Promise(resolve => setTimeout(resolve, 250));
         const isoViewDataUrl = captureFunctions3D.capture();
@@ -124,11 +123,13 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
         await new Promise(resolve => setTimeout(resolve, 250));
         const sideViewDataUrl = captureFunctions3D.capture();
         
-        // TODO: Focus 2D view on segment before capture
+        // --- Capture 2D View ---
+        // TODO: Implement focus on 2D view before capture if possible
         const heatmapDataUrl = captureFunctions2D.capture();
         
+        // --- Generate AI Insight ---
         setGenerationProgress({ current: progressBase + 4, total: totalSteps, task: `Generating AI insight for Patch #${segment.id}` });
-        const aiObservation = await generatePatchInsight(segment, inspectionResult?.nominalThickness || 0, inspectionResult?.assetType || 'N/A', threshold);
+        const aiObservation = await generatePatchSummary(segment, inspectionResult?.nominalThickness || 0, inspectionResult?.assetType || 'N/A', threshold);
 
         const enrichedSegment: ReportPatchSegment = {
             id: segment.id,
@@ -312,15 +313,19 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                 {/* --- IMAGE PREVIEW --- */}
                 <div className="space-y-4 border p-4 rounded-lg">
                     <h3 className="font-semibold">Image Preview</h3>
-                    <Carousel className="w-full max-w-sm mx-auto">
-                      <CarouselContent>
-                        {enrichedSegments?.map((seg) => (
-                           <CarouselItem key={seg.id}><Card><CardHeader className="p-2 pb-0"><CardTitle className="text-sm">Segment #{seg.id} (ISO)</CardTitle></CardHeader><CardContent className="p-2">{seg.isoViewDataUrl && <Image src={seg.isoViewDataUrl} alt={`Segment ${seg.id}`} width={300} height={200} className="rounded-md" />}</CardContent></Card></CarouselItem>
-                        ))}
-                      </CarouselContent>
-                      <CarouselPrevious />
-                      <CarouselNext />
-                    </Carousel>
+                    {hasImages ? (
+                      <Carousel className="w-full max-w-sm mx-auto">
+                        <CarouselContent>
+                          {enrichedSegments?.map((seg) => (
+                             <CarouselItem key={seg.id}><Card><CardHeader className="p-2 pb-0"><CardTitle className="text-sm">Segment #{seg.id} (ISO)</CardTitle></CardHeader><CardContent className="p-2">{seg.isoViewDataUrl && <Image src={seg.isoViewDataUrl} alt={`Segment ${seg.id}`} width={300} height={200} className="rounded-md" />}</CardContent></Card></CarouselItem>
+                          ))}
+                        </CarouselContent>
+                        <CarouselPrevious />
+                        <CarouselNext />
+                      </Carousel>
+                    ) : (
+                      <div className="text-sm text-center text-muted-foreground py-10">No visual assets captured yet.</div>
+                    )}
                 </div>
             </div>
 

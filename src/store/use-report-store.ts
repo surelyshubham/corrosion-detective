@@ -4,12 +4,6 @@ import { create } from 'zustand';
 import type { ReportMetadata } from '@/lib/types';
 import type { ReportPatchSegment } from '@/reporting/DocxReportGenerator';
 
-interface ReportImages {
-  fullModel3D?: string;
-  fullHeatmap2D?: string;
-  segmentShots?: { segmentId: number; imageDataUrl: string }[];
-}
-
 interface ReportState {
   // Step 1: Configuration
   isThresholdLocked: boolean;
@@ -18,8 +12,6 @@ interface ReportState {
   // Step 2: Screenshot Generation
   isGenerating: boolean;
   setIsGenerating: (isGenerating: boolean) => void;
-  reportImages: ReportImages; // This can be deprecated
-  setReportImages: (images: ReportImages) => void;
   enrichedSegments: ReportPatchSegment[] | null;
   setEnrichedSegments: (segments: ReportPatchSegment[]) => void;
 
@@ -40,7 +32,6 @@ interface ReportState {
 const initialState = {
   isThresholdLocked: false,
   isGenerating: false,
-  reportImages: {}, // Deprecated
   enrichedSegments: null,
   reportMetadata: null,
   detailsSubmitted: false,
@@ -61,11 +52,6 @@ export const useReportStore = create<ReportState>()(
         }
     },
     setIsGenerating: (isGenerating) => set({ isGenerating: isGenerating }),
-    setReportImages: (images) => set({
-      reportImages: images,
-      isGenerating: false,
-      generationProgress: null,
-    }),
     setEnrichedSegments: (segments) => set({
         enrichedSegments: segments
     }),
