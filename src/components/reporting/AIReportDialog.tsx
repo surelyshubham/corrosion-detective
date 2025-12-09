@@ -67,7 +67,7 @@ export function AIReportDialog({ open, onOpenChange }: AIReportDialogProps) {
       reportDate: reportMetadata?.reportDate || new Date(),
       scanDate: reportMetadata?.scanDate || defaultScanDate,
       assetName: reportMetadata?.assetName || inspectionResult?.plates.map(p => p.fileName.replace('.xlsx', '')).join(', ') || 'N/A',
-      projectName: reportMetadata?.projectName || inspectionResult?.plates[0]?.metadata.find(m => String(m[0]).toLowerCase().includes('project'))?.[1] || 'N/A',
+      projectName: reportMetadata?.projectName || inspectionResult?.plates[0]?.metadata?.find(m => String(m[0]).toLowerCase().includes('project'))?.[1] || 'N/A',
       companyName: reportMetadata?.companyName || '',
       area: reportMetadata?.area || '',
       operatorName: reportMetadata?.operatorName || '',
