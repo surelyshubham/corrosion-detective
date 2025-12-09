@@ -68,7 +68,7 @@ export function InfoTab() {
 
   const summaryData = [
     { label: 'Asset Type', value: inspectionResult.assetType },
-    { label: 'Nominal Thickness', value: `${nominalThickness.toFixed(2)} mm` },
+    { label: 'Nominal Thickness', value: `${Number(nominalThickness).toFixed(2)} mm` },
     { label: 'Overall Condition', value: condition, className: getConditionClass(condition) },
     { label: 'Total Scanned Area', value: `${stats.scannedArea.toFixed(2)} m²` },
     { label: 'Total Points in Grid', value: stats.totalPoints.toLocaleString() },
