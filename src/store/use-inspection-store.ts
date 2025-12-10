@@ -113,6 +113,31 @@ export const useInspectionStore = create<InspectionState>()(
              set({ isLoading: false, thicknessConflict: data.conflict || null });
           } else if (type === 'SEGMENTS_UPDATED') {
             set({ segments: data.segments! });
+             // After updating segments, also save to localStorage
+            const existingResult = get().inspectionResult;
+            if (existingResult && data.segments) {
+                 const patchVault: { [key: string]: any } = {};
+                 data.segments.forEach(seg => {
+                     patchVault[seg.id] = {
+                         meta: { ...seg },
+                         images: {
+                             isoViewDataUrl: seg.isoViewDataUrl,
+                             topViewDataUrl: seg.topViewDataUrl,
+                             sideViewDataUrl: seg.sideViewDataUrl,
+                             heatmapDataUrl: seg.heatmapDataUrl,
+                         }
+                     }
+                 });
+                  try {
+                    const serialized = JSON.stringify(patchVault);
+                    localStorage.setItem("patchVault", serialized);
+                    console.log("PatchVault updated and saved to localStorage");
+                  } catch (err) {
+                    console.error("Failed to save updated PatchVault:", err);
+                  }
+            }
+
+
           } else if (type === 'FINALIZED') {
              if (data.displacementBuffer && data.colorBuffer && data.gridMatrix && data.stats && data.condition && data.plates && data.segments) {
                 
@@ -147,6 +172,29 @@ export const useInspectionStore = create<InspectionState>()(
                     dataVersion: state.dataVersion + 1,
                 }));
                  
+                // Create and save PatchVault to localStorage
+                 const patchVault: { [key: string]: any } = {};
+                 data.segments.forEach(seg => {
+                     patchVault[seg.id] = {
+                         meta: { ...seg },
+                         images: {
+                             isoViewDataUrl: seg.isoViewDataUrl,
+                             topViewDataUrl: seg.topViewDataUrl,
+                             sideViewDataUrl: seg.sideViewDataUrl,
+                             heatmapDataUrl: seg.heatmapDataUrl,
+                         }
+                     }
+                 });
+                 if (typeof window !== "undefined") {
+                    try {
+                        const serialized = JSON.stringify(patchVault);
+                        localStorage.setItem("patchVault", serialized);
+                        console.log("PatchVault saved to localStorage", patchVault);
+                    } catch (err) {
+                        console.error("Failed to save PatchVault:", err);
+                    }
+                }
+
                 // Fire off AI insight generation
                 set({ isGeneratingAI: true });
                 const aiInput: CorrosionInsightInput = {
@@ -278,6 +326,9 @@ export const useInspectionStore = create<InspectionState>()(
             DataVault.colorBuffer = null;
             DataVault.gridMatrix = null;
             DataVault.stats = null;
+            if(typeof window !== 'undefined') {
+                localStorage.removeItem('patchVault');
+            }
             set({ 
                 inspectionResult: null, 
                 segments: null,
