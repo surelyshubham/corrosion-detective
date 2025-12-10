@@ -1,4 +1,5 @@
 
+
 "use client"
 
 import React, { useRef, useImperativeHandle, forwardRef, Ref } from 'react';
@@ -9,7 +10,13 @@ import { TankView3D, type TankView3DRef } from '@/components/visualizations/Tank
 
 type ViewRef = PlateView3DRef | PipeView3DRef | TankView3DRef;
 
-export type ThreeDeeViewRef = ViewRef;
+export type ThreeDeeViewRef = {
+  capture: () => string; // All views should return a data URL string
+  focus: (x: number, y: number, zoomIn: boolean) => void;
+  resetCamera: () => void;
+  setView: (view: 'iso' | 'top' | 'side') => void;
+};
+
 
 interface ThreeDeeViewTabProps {}
 
@@ -49,5 +56,3 @@ export const ThreeDeeViewTab = forwardRef<ThreeDeeViewRef, ThreeDeeViewTabProps>
 });
 
 ThreeDeeViewTab.displayName = "ThreeDeeViewTab";
-
-    

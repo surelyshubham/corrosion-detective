@@ -23,7 +23,7 @@ const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats
 }
 
 export type TankView3DRef = {
-  capture: () => HTMLCanvasElement;
+  capture: () => string;
   focus: (x: number, y: number, zoomIn: boolean) => void;
   resetCamera: () => void;
   setView: (view: 'iso' | 'top' | 'side') => void;
@@ -135,7 +135,7 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
 
 
    useImperativeHandle(ref, () => ({
-    capture: () => rendererRef.current!.domElement,
+    capture: () => rendererRef.current!.domElement.toDataURL(),
     focus: (x, y, zoomIn) => {
         if (!cameraRef.current || !controlsRef.current || !stats || !pipeOuterDiameter || !pipeLength) return;
         const { width, height } = stats.gridSize;
@@ -434,4 +434,3 @@ TankView3D.displayName = "TankView3D";
 
     
     
-

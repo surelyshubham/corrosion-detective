@@ -21,7 +21,6 @@ import { Camera, Download, Edit, FileText, Info, Loader2, Lock, Pencil } from 'l
 import ReportList from '../reporting/ReportList'
 import { PatchVault } from '@/vaults/patchVault'
 import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
-import { canvasToArrayBuffer } from '@/lib/utils'
 
 interface ReportTabProps {
   threeDViewRef: React.RefObject<ThreeDeeViewRef>;
@@ -31,6 +30,12 @@ interface ReportTabProps {
 let docxWorker: Worker | null = null;
 if (typeof window !== 'undefined') {
     docxWorker = new Worker(new URL('../../workers/docx.worker.ts', import.meta.url), { type: 'module' });
+}
+
+// Helper to convert data URL to ArrayBuffer
+async function dataUrlToArrayBuffer(dataUrl: string): Promise<ArrayBuffer> {
+    const res = await fetch(dataUrl);
+    return res.arrayBuffer();
 }
 
 
@@ -124,18 +129,23 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
         // --- Capture 3D Views ---
         captureFunctions3D.setView('iso');
         await new Promise(resolve => setTimeout(resolve, 250));
-        const isoViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture());
+        const isoViewDataUrl = captureFunctions3D.capture();
+        const isoViewBuffer = await dataUrlToArrayBuffer(isoViewDataUrl);
+
 
         captureFunctions3D.setView('top');
         await new Promise(resolve => setTimeout(resolve, 250));
-        const topViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture());
+        const topViewDataUrl = captureFunctions3D.capture();
+        const topViewBuffer = await dataUrlToArrayBuffer(topViewDataUrl);
 
         captureFunctions3D.setView('side');
         await new Promise(resolve => setTimeout(resolve, 250));
-        const sideViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture());
+        const sideViewDataUrl = captureFunctions3D.capture();
+        const sideViewBuffer = await dataUrlToArrayBuffer(sideViewDataUrl);
         
         // --- Capture 2D View ---
-        const heatmapBuffer = await canvasToArrayBuffer(captureFunctions2D.capture());
+        const heatmapDataUrl = captureFunctions2D.capture();
+        const heatmapBuffer = await dataUrlToArrayBuffer(heatmapDataUrl);
         
         // --- Generate AI Insight ---
         const aiObservation = await generatePatchSummary(segment, inspectionResult?.nominalThickness || 0, inspectionResult?.assetType || 'N/A', threshold);
