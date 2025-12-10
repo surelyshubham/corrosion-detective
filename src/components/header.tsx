@@ -1,4 +1,6 @@
-import { Sigma } from "lucide-react"
+import { Sigma, FileText } from "lucide-react"
+import Link from "next/link"
+import { Button } from "./ui/button"
 
 export function Header() {
   return (
@@ -12,6 +14,12 @@ export function Header() {
         </h1>
         <span className="text-xs font-mono text-muted-foreground mt-1">V1</span>
       </div>
+      <Link href="/report" passHref>
+        <Button variant="outline">
+          <FileText className="mr-2"/>
+          Generate Report
+        </Button>
+      </Link>
     </header>
   )
 }
