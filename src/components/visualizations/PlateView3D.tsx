@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Expand, Pin, RefreshCw, LocateFixed, Loader2, FileText } from 'lucide-react'
 import { useImperativeHandle } from 'react'
-import { captureAssetPatches, generateFinalReport } from '@/report/ReportGenerator'
+import { generateFinalReport } from '@/report/ReportGenerator'
 import { Input } from '../ui/input'
 import { Textarea } from '../ui/textarea'
 import { ColorLegend } from './ColorLegend'
@@ -194,8 +194,13 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     const { width, height } = currentStats.gridSize;
     const aspect = height / width;
     const visualHeight = VISUAL_WIDTH * aspect;
-    // Cap geometry segments for performance
-    const geometry = new THREE.PlaneGeometry(VISUAL_WIDTH, visualHeight, 511, 511);
+    
+    const geometry = new THREE.PlaneGeometry(
+        VISUAL_WIDTH,
+        visualHeight,
+        Math.max(1, width - 1),
+        Math.max(1, height - 1)
+    );
     geometry.center();
     
     const { displacementBuffer, colorBuffer } = DataVault;
@@ -491,4 +496,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 PlateView3D.displayName = "PlateView3D";
 
     
+
 
