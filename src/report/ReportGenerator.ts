@@ -281,5 +281,3 @@ export async function generateFinalReport(metadata: any, patches: any[]) {
 
     doc.save(`${metadata.assetName}_Report.pdf`);
 }
-
-    

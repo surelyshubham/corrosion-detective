@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview A simple, static object to hold large data arrays outside of React/Zustand state.
  * This prevents performance issues from deep state comparisons on large data blobs.
