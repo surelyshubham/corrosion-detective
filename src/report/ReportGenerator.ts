@@ -4,7 +4,7 @@ import type { SegmentBox } from '@/lib/types';
 
 
 // Helper to load image from URL to Base64 (avoids some PDF errors)
-const getDataUri = (url: string): Promise<string> => {
+const loadBase64Image = (url: string): Promise<string> => {
     return new Promise((resolve, reject) => {
         const image = new Image();
         image.setAttribute('crossOrigin', 'anonymous'); 
@@ -163,9 +163,10 @@ export async function generateFinalReport(metadata: any, patches: any[]) {
     const margin = 15;
     
     // 1. Load Logo
+    const logoUrl = "/logo.png";
     let logoData = null;
     try {
-        logoData = await getDataUri("https://www.sigmandt.com/images/logo.png");
+        logoData = await loadBase64Image(logoUrl);
     } catch (e) {
         console.warn("Could not load logo, skipping...");
     }
