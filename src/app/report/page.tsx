@@ -3,19 +3,12 @@
 import React, { useState } from "react";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import Link from 'next/link';
 
 import {
   pickTopNPatches,
   getPatchFromVault,
   getPatchViewUrls,
 } from "@/report/patchHelpers";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 
 const LOGO_URL = "https://www.sigmandt.com/images/logo.png";
 
@@ -198,53 +191,48 @@ export default function ReportPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-        <Link href="/" passHref>
-            <Button variant="outline" className="mb-6">
-                <ArrowLeft className="mr-2"/>
-                Back to Main App
-            </Button>
-        </Link>
-        <Card>
-            <CardHeader>
-                <CardTitle className="font-headline">Corrosion Report Generator</CardTitle>
-                <CardDescription>
-                    This tool generates a lightweight PDF report using cached patch images from the vault.
-                    It does not re-render 2D/3D views or upload anything to a server.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="assetId">Asset ID</Label>
-                        <Input
-                            id="assetId"
-                            value={assetId}
-                            onChange={(e) => setAssetId(e.target.value)}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="inspector">Inspector</Label>
-                        <Input
-                            id="inspector"
-                            value={inspector}
-                            onChange={(e) => setInspector(e.target.value)}
-                        />
-                    </div>
-                </div>
+    <div style={{ padding: 30 }}>
+      <h1>Corrosion Report Generator</h1>
 
-                <Button onClick={generatePdf} disabled={busy} className="w-full">
-                    {busy ? `Generating... ${progress}%` : "Generate Corrosion PDF Report"}
-                </Button>
-                
-                {busy && (
-                    <div className="space-y-2 pt-2">
-                        <Label>Progress: {progress}%</Label>
-                        <Progress value={progress} />
-                    </div>
-                )}
-            </CardContent>
-        </Card>
+      <p style={{ opacity: 0.7 }}>
+        This tool generates a lightweight PDF report using cached patch images.
+        It does not re-render 2D/3D or upload anything to a server.
+      </p>
+
+      <div style={{ display: "flex", gap: 20, marginTop: 20 }}>
+        <div>
+          <label>Asset ID</label>
+          <input
+            value={assetId}
+            onChange={(e) => setAssetId(e.target.value)}
+            style={{ display: "block", padding: 8 }}
+          />
+        </div>
+
+        <div>
+          <label>Inspector</label>
+          <input
+            value={inspector}
+            onChange={(e) => setInspector(e.target.value)}
+            style={{ display: "block", padding: 8 }}
+          />
+        </div>
+      </div>
+
+      <button
+        onClick={generatePdf}
+        disabled={busy}
+        style={{
+          marginTop: 30,
+          padding: "10px 22px",
+          fontSize: 16,
+          background: "#0284c7",
+          color: "white",
+          borderRadius: 8,
+        }}
+      >
+        {busy ? `Generating... ${progress}%` : "Generate Corrosion PDF Report"}
+      </button>
     </div>
   );
 }
