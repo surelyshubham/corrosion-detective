@@ -1,3 +1,4 @@
+
 // src/utils/thumbnailPool.ts
 // Bundler-agnostic worker creation: worker script is created at runtime from a string blob.
 

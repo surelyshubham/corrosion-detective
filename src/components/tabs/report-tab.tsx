@@ -22,8 +22,11 @@ import ReportList from '../reporting/ReportList'
 import { PatchVault } from '@/vaults/patchVault'
 import { generatePatchSummary } from '@/ai/flows/generate-patch-summary'
 import { canvasToArrayBuffer, downloadFile } from '@/lib/utils'
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useFirebase } from '@/firebase'
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { pickTopPatches, type PatchMeta } from '@/utils/patchSelection'
+import { generateDocxFromSelectedPatches } from '@/utils/docxClientGenerator'
+
 
 interface ReportTabProps {
   threeDViewRef: React.RefObject<ThreeDeeViewRef>;
@@ -114,9 +117,11 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
     const captureAndConvert = async (captureFn: () => string | HTMLCanvasElement): Promise<ArrayBuffer> => {
         const result = captureFn();
         if (typeof result === 'string') {
-             const res = await fetch(result);
-             return await res.arrayBuffer();
+             // It's a data URL, fetch and convert
+            const res = await fetch(result);
+            return await res.arrayBuffer();
         }
+        // It's a canvas element
         return canvasToArrayBuffer(result);
     };
 
@@ -124,15 +129,12 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
         const segment = segments[i];
         setGenerationProgress({ current: i + 1, total: totalSteps, task: `Capturing views for Patch #${segment.id}` });
         
-        // --- Focus on the segment in both views
         captureFunctions3D.focus(segment.center.x, segment.center.y, true);
         await new Promise(resolve => setTimeout(resolve, 250));
 
-        // --- Capture 3D Views ---
         captureFunctions3D.setView('iso');
         await new Promise(resolve => setTimeout(resolve, 250));
         const isoViewBuffer = await captureAndConvert(captureFunctions3D.capture);
-
 
         captureFunctions3D.setView('top');
         await new Promise(resolve => setTimeout(resolve, 250));
@@ -142,16 +144,13 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
         await new Promise(resolve => setTimeout(resolve, 250));
         const sideViewBuffer = await captureAndConvert(captureFunctions3D.capture);
         
-        // --- Capture 2D View ---
         const heatmapBuffer = await captureAndConvert(captureFunctions2D.capture);
         
-        // --- Generate AI Insight ---
         const aiObservation = await generatePatchSummary(segment, inspectionResult?.nominalThickness || 0, inspectionResult?.assetType || 'N/A', threshold);
 
         const enrichedSegment: ReportPatchSegment = { ...segment, aiObservation };
         finalSegments.push(enrichedSegment);
         
-        // --- Store buffers in PatchVault ---
          PatchVault.set(String(segment.id), {
             buffers: [
                 { name: 'iso', buffer: isoViewBuffer, mime: 'image/png' },
@@ -178,94 +177,86 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   };
   
  const handleGenerateFinalReport = async () => {
-    if (!enrichedSegments || enrichedSegments.length === 0 || !reportMetadata || !inspectionResult || !storage) {
+    if (!enrichedSegments || enrichedSegments.length === 0 || !reportMetadata || !inspectionResult) {
         toast({
             variant: "destructive",
             title: "Cannot Generate Report",
-            description: "Please capture assets, submit report details, and ensure you are connected to Firebase.",
+            description: "Please capture assets and submit report details.",
         });
         return;
     }
 
     setIsGenerating(true);
-    const reportId = `report_${Date.now()}`;
-    const totalUploads = enrichedSegments.length * 4;
-    setGenerationProgress({ current: 0, total: totalUploads, task: 'Uploading visual assets...' });
-
+    setGenerationProgress({percent:0, message:'Selecting top patches...'});
+    
     try {
-        const patchesWithUrls = await Promise.all(enrichedSegments.map(async (segment, patchIndex) => {
-            const vaultEntry = PatchVault.get(String(segment.id));
-            if (!vaultEntry) throw new Error(`Could not find vault entry for patch ${segment.id}`);
-
-            const imageUrls: { [key: string]: string } = {};
-
-            for (let i = 0; i < vaultEntry.buffers.length; i++) {
-                const { name, buffer } = vaultEntry.buffers[i];
-                const imagePath = `temp_reports/${reportId}/patch_${segment.id}/${name}.png`;
-                const imageRef = storageRef(storage, imagePath);
-                await uploadBytes(imageRef, buffer);
-                const downloadURL = await getDownloadURL(imageRef);
-                imageUrls[name] = downloadURL;
-                setGenerationProgress({
-                    current: patchIndex * 4 + i + 1,
-                    total: totalUploads,
-                    task: `Uploading ${name} for patch #${segment.id}...`
-                });
-            }
-
-            return {
-                ...segment,
-                isoViewUrl: imageUrls.iso,
-                topViewUrl: imageUrls.top,
-                sideViewUrl: imageUrls.side,
-                heatmapUrl: imageUrls.heat,
-            };
+        const allMetas: PatchMeta[] = enrichedSegments.map((s, i) => ({
+            id: String(s.id),
+            severity: s.tier,
+            maxDepth_mm: (inspectionResult.nominalThickness || 0) - s.worstThickness,
+            avgDepth_mm: (inspectionResult.nominalThickness || 0) - s.avgThickness,
+            area_m2: s.pointCount / 1_000_000,
+            detectionIndex: i,
         }));
+        
+        const topPatchesMeta = pickTopPatches(allMetas, 10);
+        setGenerationProgress({percent:5, message:`Gathering images for top ${topPatchesMeta.length} patches...`});
 
-        setGenerationProgress({ current: totalUploads, total: totalUploads, task: 'Generating DOCX on server...' });
-
-        const apiPayload = {
-            global: {
-                assetName: reportMetadata.assetName || 'N/A',
-                projectName: reportMetadata.projectName,
-                inspectionDate: reportMetadata.scanDate ? reportMetadata.scanDate.toLocaleDateString() : 'N/A',
-                nominalThickness: Number(inspectionResult.nominalThickness),
-                minThickness: Number(inspectionResult.stats.minThickness),
-                maxThickness: Number(inspectionResult.stats.maxThickness),
-                avgThickness: Number(inspectionResult.stats.avgThickness),
-                corrodedAreaBelow80: Number(inspectionResult.stats.areaBelow80),
-                corrodedAreaBelow70: Number(inspectionResult.stats.areaBelow70),
-                corrodedAreaBelow60: Number(inspectionResult.stats.areaBelow60),
-            },
-            segments: patchesWithUrls,
-            remarks: reportMetadata.remarks,
-        };
-
-        const response = await fetch('/api/generate-report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(apiPayload),
+        const selectedPatches = topPatchesMeta.map(t => {
+            const entry = PatchVault.get(t.id);
+            const segment = enrichedSegments.find(s => String(s.id) === t.id);
+            return {
+                id: t.id,
+                meta: entry?.meta || {},
+                shortInsight: segment?.aiObservation || '',
+                buffers: entry?.buffers || [],
+            }
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Server failed to generate report: ${errorText}`);
-        }
+        setGenerationProgress({percent:20, message:'Preparing global data...'});
 
-        const blob = await response.blob();
-        downloadFile(blob, `Report_${reportMetadata.assetName || 'Asset'}.docx`);
+        const metadata = {
+            title: reportMetadata.projectName,
+            assetId: reportMetadata.assetName,
+            inspectionDate: reportMetadata.scanDate?.toISOString().slice(0, 10),
+            inspector: reportMetadata.operatorName,
+            globalStats: {
+                totalPatches: segments?.length,
+                totalCorrodedArea_m2: inspectionResult.stats.scannedArea,
+            },
+            recommendations: [inspectionResult.aiInsight?.recommendation || 'Review findings and schedule maintenance as required.'],
+            globalImages: [], // This can be populated if global images are captured
+        };
+
+        setGenerationProgress({percent:30, message:'Generating DOCX in worker...'});
+
+        const files = await generateDocxFromSelectedPatches(metadata, selectedPatches, (p) => setGenerationProgress(p));
+        
+        setGenerationProgress({percent:100, message:'Done. Triggering download...'});
+
+        for (const f of files) {
+          const url = URL.createObjectURL(f.blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = f.name;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+            try { a.remove(); } catch(e){}
+          }, 2000);
+        }
 
     } catch (error: any) {
         console.error("Report generation failed:", error);
         toast({
             variant: "destructive",
             title: "Report Generation Failed",
-            description: error.message || "An unknown error occurred.",
+            description: error.message || "An unknown error occurred in the worker.",
         });
     } finally {
         setIsGenerating(false);
         setGenerationProgress(null);
-        // TODO: Add cleanup for temp files in storage
     }
 };
 
@@ -374,7 +365,7 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                 
                 {/* --- IMAGE PREVIEW --- */}
                 <div className="space-y-4 border p-4 rounded-lg min-h-[300px]">
-                    <h3 className="font-semibold">Image Preview</h3>
+                    <h3 className="font-semibold">Image Preview (Top 10 Patches)</h3>
                     {hasImages ? (
                         <ReportList patchIds={patchIds} />
                     ) : (
@@ -387,12 +378,12 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
             <div className="space-y-4 border p-4 rounded-lg">
                 <h3 className="font-semibold flex items-center">
                    <span className={`flex items-center justify-center w-6 h-6 rounded-full font-bold bg-primary text-primary-foreground mr-3`}>4</span>
-                   Create and Download DOCX (Cloud)
+                   Create and Download DOCX (Client-Side)
                 </h3>
                  {generationProgress && isGenerating && !generationProgress.task.includes('Capturing') && (
                   <div className="space-y-2">
-                    <Progress value={(generationProgress.current / generationProgress.total) * 100} />
-                    <p className="text-xs text-muted-foreground text-center">{generationProgress.task}</p>
+                    <Progress value={generationProgress.percent} />
+                    <p className="text-xs text-muted-foreground text-center">{generationProgress.message}</p>
                   </div>
                  )}
                 <Button 
@@ -400,8 +391,8 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
                   onClick={handleGenerateFinalReport}
                   disabled={!hasImages || !detailsSubmitted || isGenerating}
                 >
-                  {isGenerating && !generationProgress?.task.includes('Capturing') ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2" />}
-                  {isGenerating && !generationProgress?.task.includes('Capturing') ? 'Generating...' : 'Generate DOCX Report'}
+                  {isGenerating && generationProgress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2" />}
+                  {isGenerating && generationProgress ? 'Generating...' : 'Generate Top-10 Report'}
                 </Button>
             </div>
 

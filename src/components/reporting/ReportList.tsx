@@ -1,6 +1,6 @@
 // src/components/reporting/ReportList.tsx
 import React, { useRef, useCallback, useEffect, useState } from 'react';
-import { FixedSizeList as List, ListOnItemsRenderedProps } from 'react-window';
+import { FixedSizeList as List, type ListOnItemsRenderedProps } from 'react-window';
 import { PatchVault } from '@/vaults/patchVault';
 import { ThumbnailPool } from '@/utils/thumbnailPool';
 
