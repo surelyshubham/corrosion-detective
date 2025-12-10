@@ -18,12 +18,8 @@ import { useImperativeHandle } from 'react'
 import { captureAssetPatches, generateFinalReport } from '@/report/ReportGenerator'
 import { Input } from '../ui/input'
 import { Textarea } from '../ui/textarea'
+import { ColorLegend } from './ColorLegend'
 
-
-const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
-    // This component remains largely the same as before
-    return <Card className="bg-card/90"><CardHeader className="p-3"><CardTitle className="text-base">Legend</CardTitle></CardHeader></Card>;
-}
 
 export type PlateView3DRef = {
   capture: () => string;
@@ -210,6 +206,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     const visualHeight = VISUAL_WIDTH * aspect;
     // Cap geometry segments for performance
     const geometry = new THREE.PlaneGeometry(VISUAL_WIDTH, visualHeight, 511, 511);
+    geometry.center();
     
     const { displacementBuffer, colorBuffer } = DataVault;
     if (!displacementBuffer || !colorBuffer) return;
@@ -509,6 +506,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
             </Button>
           </CardContent>
         </Card>
+        <ColorLegend />
       </div>
     </div>
   )
@@ -516,4 +514,3 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
 PlateView3D.displayName = "PlateView3D";
 
     
-

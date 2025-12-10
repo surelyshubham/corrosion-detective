@@ -15,12 +15,8 @@ import { Switch } from '@/components/ui/switch'
 import { RefreshCw, Percent, Ruler, LocateFixed, Pin } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { useImperativeHandle } from 'react'
+import { ColorLegend } from './ColorLegend'
 
-
-const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
-    // This component remains largely the same as before
-    return <Card className="bg-card/90"><CardHeader className="p-3"><CardTitle className="text-base">Legend</CardTitle></CardHeader></Card>;
-}
 
 export type PipeView3DRef = {
   capture: () => string;
@@ -273,7 +269,7 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
 
       if ( intersects.length > 0 && intersects[0].uv) {
           const uv = intersects[0].uv;
-          const { width, height } = stats!;
+          const { width, height } = stats.gridSize;
           const gridX = Math.floor(uv.x * (width - 1));
           const gridY = Math.floor((1 - uv.y) * (height - 1));
           
@@ -425,9 +421,7 @@ export const PipeView3D = React.forwardRef<PipeView3DRef, PipeView3DProps>((prop
             <Button variant="outline" onClick={() => setView('iso')}>Isometric</Button>
           </CardContent>
         </Card>
-        {stats && nominalThickness && (
-          <ColorLegend mode={colorMode} stats={stats} nominalThickness={nominalThickness} />
-        )}
+        <ColorLegend />
       </div>
     </div>
   )

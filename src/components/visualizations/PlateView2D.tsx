@@ -9,6 +9,7 @@ import { Label } from '../ui/label'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { Percent, Ruler, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
+import { ColorLegend } from './ColorLegend'
 
 
 const getNiceInterval = (range: number, maxTicks: number): number => {
@@ -277,6 +278,7 @@ export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, 
                 </div>
             </CardContent>
         </Card>
+        <ColorLegend />
       </div>
     </div>
   )
