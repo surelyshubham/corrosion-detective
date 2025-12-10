@@ -33,7 +33,7 @@ interface PlateView3DProps {}
 export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((props, ref) => {
   const { inspectionResult, segments, selectedPoint, setSelectedPoint, dataVersion } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
-  const [isReady, setIsReady] = useState(false);
+  const isReady = dataVersion > 0 && !!DataVault.stats && !!DataVault.displacementBuffer;
   const [zScale, setZScale] = useState(30)
   const [showReference, setShowReference] = useState(false)
   const [showMinMax, setShowMinMax] = useState(true)
@@ -74,15 +74,6 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     rendererRef.current.render(sceneRef.current, cameraRef.current);
   }, []);
   
-  // This effect runs only when the data from the worker is updated
-  useEffect(() => {
-    if (dataVersion > 0 && DataVault.stats && DataVault.displacementBuffer) {
-      setIsReady(true);
-    } else {
-      setIsReady(false);
-    }
-  }, [dataVersion]);
-
   const handleGenerateReport = async () => {
     if (!sceneRef.current || !cameraRef.current || !rendererRef.current || !meshRef.current || !inspectionResult || !segments) return;
     setIsGeneratingReport(true);
@@ -389,13 +380,13 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   if (!inspectionResult) return null;
 
   // Data error or loading placeholder
-  if (!isReady || !stats || !stats.gridSize || stats.gridSize.width === 0 || stats.gridSize.height === 0) {
+  if (!isReady) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-muted/30 border-2 border-dashed border-border rounded-lg">
           <div className="text-center text-muted-foreground">
               <Loader2 className="mx-auto h-8 w-8 animate-spin" />
-              <h3 className="text-lg font-bold mt-4">Building 3D Model...</h3>
-              <p className="text-xs">Preparing textures and geometry.</p>
+              <h3 className="text-lg font-bold mt-4">Waiting for Data...</h3>
+              <p className="text-xs">Process a file in the 'Setup' tab to build the 3D model.</p>
           </div>
       </div>
     );
