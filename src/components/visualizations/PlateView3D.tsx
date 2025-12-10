@@ -15,7 +15,9 @@ import { Switch } from '@/components/ui/switch'
 import { Expand, Pin, RefreshCw, Percent, Ruler, LocateFixed, Loader2, FileText } from 'lucide-react'
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
 import { useImperativeHandle } from 'react'
-import { captureAssetPatches, generatePDF } from '@/report/ReportGenerator'
+import { captureAssetPatches, generateFinalReport } from '@/report/ReportGenerator'
+import { Input } from '../ui/input'
+import { Textarea } from '../ui/textarea'
 
 
 const ColorLegend = ({ mode, stats, nominalThickness }: { mode: ColorMode, stats: any, nominalThickness: number}) => {
@@ -34,7 +36,7 @@ interface PlateView3DProps {}
 
 
 export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((props, ref) => {
-  const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion } = useInspectionStore()
+  const { inspectionResult, segments, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [isReady, setIsReady] = useState(false);
   const [zScale, setZScale] = useState(30)
@@ -43,6 +45,13 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   const [showOrigin, setShowOrigin] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  // Form state for PDF metadata
+  const [reportMetadata, setReportMetadata] = useState({
+      location: 'Haldia Refinery, WB',
+      inspector: 'Shubham (Level II)',
+      remarks: 'External shell corrosion observed. Requesting barrier coating application.',
+  });
   
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
@@ -59,7 +68,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   const referencePlaneRef = useRef<THREE.Mesh | null>(null);
 
 
-  const { nominalThickness } = inspectionResult || {};
+  const { nominalThickness, assetType } = inspectionResult || {};
   const stats = DataVault.stats;
   const VISUAL_WIDTH = 100;
   
@@ -80,27 +89,29 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   }, [dataVersion]);
 
   const handleGenerateReport = async () => {
-   if (!sceneRef.current || !cameraRef.current || !rendererRef.current || !meshRef.current) return;
-   setIsGeneratingReport(true);
+    if (!sceneRef.current || !cameraRef.current || !rendererRef.current || !meshRef.current || !inspectionResult || !segments) return;
+    setIsGeneratingReport(true);
    
     try {
-        // 1. Capture Images
+        // 1. Run the Robot (Capture Images)
         // The renderer needs to have local clipping enabled to respect the planes
         rendererRef.current.localClippingEnabled = true;
-        const patches = await captureAssetPatches(sceneRef.current, cameraRef.current, rendererRef.current, meshRef.current);
+        const patchImages = await captureAssetPatches(sceneRef.current, cameraRef.current, rendererRef.current, meshRef.current, segments);
         rendererRef.current.localClippingEnabled = false; // Disable it after capture
 
-        // 2. Capture Full Overview
-        rendererRef.current.render(sceneRef.current, cameraRef.current);
-        const fullAsset = rendererRef.current.domElement.toDataURL("image/png");
-        
-        // This is a placeholder for the 2D view. 
-        // A full implementation would need to access the 2D canvas.
-        const twoDHeatmapPlaceholder = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-
+        // 2. Gather User Input
+        const metadata = {
+            assetName: assetType || "N/A",
+            location: reportMetadata.location,
+            inspectionDate: new Date().toLocaleDateString(), // Placeholder
+            reportingDate: new Date().toLocaleDateString(),
+            inspector: reportMetadata.inspector,
+            remarks: reportMetadata.remarks,
+        };
 
         // 3. Create PDF
-        generatePDF("ASSET-001", fullAsset, twoDHeatmapPlaceholder, patches);
+        await generateFinalReport(metadata, patchImages);
+
     } catch(err) {
         console.error("Report generation failed:", err);
         alert("Failed to generate report. Check console for details.");
@@ -472,7 +483,19 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
           <CardHeader>
             <CardTitle className="text-lg font-headline">Reporting</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+                <Label htmlFor="report-location">Location</Label>
+                <Input id="report-location" value={reportMetadata.location} onChange={(e) => setReportMetadata(prev => ({ ...prev, location: e.target.value }))} />
+            </div>
+             <div className="space-y-1">
+                <Label htmlFor="report-inspector">Inspector</Label>
+                <Input id="report-inspector" value={reportMetadata.inspector} onChange={(e) => setReportMetadata(prev => ({ ...prev, inspector: e.target.value }))} />
+            </div>
+             <div className="space-y-1">
+                <Label htmlFor="report-remarks">Remarks</Label>
+                <Textarea id="report-remarks" value={reportMetadata.remarks} onChange={(e) => setReportMetadata(prev => ({ ...prev, remarks: e.target.value }))} />
+            </div>
             <Button onClick={handleGenerateReport} disabled={isGeneratingReport} className="w-full">
               {isGeneratingReport ? (
                 <Loader2 className="mr-2 animate-spin" />
@@ -488,3 +511,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
+
+    

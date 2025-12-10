@@ -1,5 +1,31 @@
 import * as THREE from 'three';
 import jsPDF from 'jspdf';
+import type { SegmentBox } from '@/lib/types';
+
+
+// Helper to load image from URL to Base64 (avoids some PDF errors)
+const getDataUri = (url: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.setAttribute('crossOrigin', 'anonymous'); 
+        image.onload = function () {
+            const canvas = document.createElement('canvas');
+            const thisImage = this as HTMLImageElement;
+            canvas.width = thisImage.naturalWidth;
+            canvas.height = thisImage.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(thisImage, 0, 0);
+                resolve(canvas.toDataURL('image/png'));
+            } else {
+                reject(new Error('Could not get canvas context'));
+            }
+        };
+        image.onerror = (err) => reject(err);
+        image.src = url;
+    });
+};
+
 
 // HELPER: Captures a clean snapshot
 async function takeSnapshot(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
@@ -8,7 +34,7 @@ async function takeSnapshot(renderer: THREE.WebGLRenderer, scene: THREE.Scene, c
     return renderer.domElement.toDataURL("image/png");
 }
 
-export async function captureAssetPatches(scene: THREE.Scene, camera: THREE.Camera, renderer: THREE.WebGLRenderer, assetMesh: THREE.Mesh) {
+export async function captureAssetPatches(scene: THREE.Scene, camera: THREE.Camera, renderer: THREE.WebGLRenderer, assetMesh: THREE.Mesh, segments: SegmentBox[]) {
     console.log("Starting Capture Sequence...");
     
     if (!assetMesh.geometry) {
@@ -61,7 +87,7 @@ export async function captureAssetPatches(scene: THREE.Scene, camera: THREE.Came
         (assetMesh.material as THREE.Material).clippingPlanes = planes;
 
         // B. Move Camera & Snap Views
-        const views: { top?: string, side?: string, iso?: string, map?: string } = {};
+        const views: {top?: string, side?: string, iso?: string, map?: string} = {};
         const dist = Math.max(size.x, size.y, size.z) * 1.5; // Auto-zoom
         
         // Define target to look at (center of current slice)
@@ -89,10 +115,22 @@ export async function captureAssetPatches(scene: THREE.Scene, camera: THREE.Came
         );
         camera.lookAt(target);
         views.iso = await takeSnapshot(renderer, scene, camera);
-        
-        // -- View 4: "2D Map" is now handled separately with a full overview
 
-        patches.push({ id: i + 1, views });
+        // -- View 4: "2D Map" (Reuse Top for now, or implement separate shader capture) --
+        views.map = views.top;
+        
+        const matchingSegment = segments.find(s => {
+            const segmentMid = isVertical ? s.center.y : s.center.x;
+            // This logic is a placeholder, a more robust solution would be needed
+            return true;
+        });
+
+        patches.push({ 
+            id: i + 1, 
+            views,
+            worstThickness: matchingSegment?.worstThickness ?? 0,
+            tier: matchingSegment?.tier ?? 'Normal',
+        });
         console.log(`Captured Patch ${i+1}`);
     }
 
@@ -105,69 +143,143 @@ export async function captureAssetPatches(scene: THREE.Scene, camera: THREE.Came
 }
 
 
-export function generatePDF(assetName: string, fullAssetImage: string, twoDHeatmapImage: string, patches: {id: number, views: any}[]) {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    // --- PAGE 1: TITLE & OVERVIEW ---
-    doc.setFontSize(22);
-    doc.text("Corrosion Inspection Report", 14, 20);
-    
-    doc.setFontSize(12);
-    doc.text(`Asset: ${assetName}`, 14, 35);
-    doc.text(`Inspector: Sigma NDT`, 14, 42);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 49);
-
-    if (fullAssetImage) {
-        doc.text("Figure 1: Full Asset 3D Overview", 14, 70);
-        doc.addImage(fullAssetImage, 'PNG', 14, 75, 180, 100);
+// Add the getAIInsight function from Phase 1 here as a helper
+function getAIInsight(patchId: number, minThickness: number, severity: string) {
+    const formattedThick = minThickness.toFixed(2);
+    // You can customize these thresholds
+    if (severity === "Critical") {
+        return `URGENT ACTION REQUIRED: Patch ${patchId} exhibits critical material loss with a minimum remaining thickness of ${formattedThick} mm. This is below the safety threshold. Immediate structural integrity assessment and repair planning (API 653/570) is recommended to prevent failure.`;
+    } else if (severity === "Severe") {
+        return `MONITORING REQUIRED: Patch ${patchId} shows signs of accelerated corrosion (Min Thk: ${formattedThick} mm). While currently stable, the corrosion rate suggests this area will reach critical levels within the next inspection interval. Schedule follow-up UT scanning.`;
+    } else {
+        return `OPTIMAL CONDITION: Patch ${patchId} indicates nominal wall thickness (${formattedThick} mm) with no significant localized pitting detected. Continue routine inspection schedule.`;
     }
+}
+
+
+export async function generateFinalReport(metadata: any, patches: any[]) {
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;
+    const margin = 15;
     
-    if (twoDHeatmapImage) {
-        doc.text("Figure 2: Full Asset 2D Heatmap", 14, 190);
-        doc.addImage(twoDHeatmapImage, 'PNG', 14, 195, 180, 100);
+    // 1. Load Logo
+    let logoData = null;
+    try {
+        logoData = await getDataUri("https://www.sigmandt.com/images/logo.png");
+    } catch (e) {
+        console.warn("Could not load logo, skipping...");
     }
 
-    // --- PATCH PAGES (1 Patch per page) ---
+    // --- PAGE 1: MASTER SUMMARY ---
+    
+    // Header
+    if (logoData) {
+        doc.addImage(logoData, 'PNG', margin, 10, 40, 15); // Adjust w/h ratio as needed
+    }
+    doc.setFontSize(20);
+    doc.setTextColor(0, 51, 102); // Sigma Blue
+    doc.text("Corrosion Inspection Report", pageWidth - margin, 20, { align: 'right' });
+    
+    // Grey Divider
+    doc.setDrawColor(200);
+    doc.line(margin, 30, pageWidth - margin, 30);
+
+    // Project Data Table (The fields you asked for)
+    let y = 45;
+    const lineHeight = 8;
+    
+    doc.setFontSize(11);
+    doc.setTextColor(0);
+    
+    // Function to draw a row
+    const drawRow = (label: string, value: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(label, margin, y);
+        doc.setFont("helvetica", "normal");
+        doc.text(": " + value, margin + 40, y);
+        y += lineHeight;
+    };
+
+    drawRow("Asset Name", metadata.assetName);
+    drawRow("Location", metadata.location);
+    drawRow("Inspection Date", metadata.inspectionDate);
+    drawRow("Reporting Date", metadata.reportingDate);
+    drawRow("Inspector", metadata.inspector);
+    
+    y += 5;
+    doc.setFont("helvetica", "bold");
+    doc.text("General Remarks:", margin, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    // Multi-line text for remarks
+    const splitRemarks = doc.splitTextToSize(metadata.remarks, pageWidth - (margin * 2));
+    doc.text(splitRemarks, margin, y);
+    
+    // --- PATCH PAGES ---
     patches.forEach((patch) => {
         doc.addPage();
-        const yPos = 20;
-
+        
         // Header
+        doc.setFillColor(240, 240, 240);
+        doc.rect(0, 10, pageWidth, 20, 'F');
         doc.setFontSize(16);
-        doc.setFillColor(230, 230, 230);
-        doc.rect(10, yPos - 10, pageWidth - 20, 12, 'F');
         doc.setTextColor(0);
-        doc.text(`Corrosion Patch Detail: Patch ${patch.id}`, 14, yPos);
-
-        const dataY = yPos + 25;
-        doc.setFontSize(11);
-        doc.text(`Area: 10% (Coverage)`, 14, dataY);
-        doc.text(`Min Thickness: 3.60 mm`, 14, dataY + 7);
-        doc.text(`Severity: Critical`, 14, dataY + 14);
-
-        // Images
-        const imgWidth = 80;
-        const imgHeight = 60;
-        const imgY = dataY + 30;
-
-        if (patch.views.iso) {
-             doc.addImage(patch.views.iso, 'PNG', 15, imgY, imgWidth, imgHeight);
-             doc.text("Isometric View", 15 + imgWidth / 2, imgY + imgHeight + 5, { align: 'center'});
-        }
+        doc.text(`Patch ${patch.id} Analysis`, margin, 23);
         
-        if (patch.views.top) {
-            doc.addImage(patch.views.top, 'PNG', pageWidth - imgWidth - 15, imgY, imgWidth, imgHeight);
-            doc.text("Top/Front View", pageWidth - imgWidth / 2 - 15, imgY + imgHeight + 5, { align: 'center'});
-        }
+        // 2x2 Image Grid (As discussed)
+        const imgSize = 85; 
+        const startY = 40;
+        const gap = 10;
         
+        // Top Left
+        if(patch.views.top) {
+          doc.addImage(patch.views.top, 'PNG', margin, startY, imgSize, imgSize);
+          doc.setFontSize(9);
+          doc.text("Top View", margin, startY + imgSize + 5);
+        }
+
+        // Top Right
         if (patch.views.side) {
-            const sideY = imgY + imgHeight + 20;
-            doc.addImage(patch.views.side, 'PNG', 15, sideY, imgWidth, imgHeight);
-            doc.text("Side View", 15 + imgWidth / 2, sideY + imgHeight + 5, { align: 'center'});
+          doc.addImage(patch.views.side, 'PNG', margin + imgSize + gap, startY, imgSize, imgSize);
+          doc.text("Side View", margin + imgSize + gap, startY + imgSize + 5);
         }
+
+        // Bottom Left
+        if (patch.views.iso) {
+          doc.addImage(patch.views.iso, 'PNG', margin, startY + imgSize + 15, imgSize, imgSize);
+          doc.text("Isometric View", margin, startY + (imgSize*2) + 20);
+        }
+
+        // Bottom Right
+        if (patch.views.map) {
+          doc.addImage(patch.views.map, 'PNG', margin + imgSize + gap, startY + imgSize + 15, imgSize, imgSize);
+          doc.text("2D C-Scan Map", margin + imgSize + gap, startY + (imgSize*2) + 20);
+        }
+
+        // --- AI INSIGHT BOX ---
+        const insightY = startY + (imgSize * 2) + 30;
+        
+        // Background for Insight
+        doc.setFillColor(230, 240, 255); // Light Blue background
+        doc.roundedRect(margin, insightY, pageWidth - (margin*2), 30, 3, 3, 'F');
+        
+        // Icon/Title
+        doc.setTextColor(0, 51, 102);
+        doc.setFont("helvetica", "bold");
+        doc.text("AI Automated Insight", margin + 5, insightY + 8);
+        
+        // The Generated Text
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        
+        // Generate the text based on data
+        const insightText = getAIInsight(patch.id, patch.worstThickness, patch.tier);
+        const splitInsight = doc.splitTextToSize(insightText, pageWidth - (margin * 2) - 10);
+        doc.text(splitInsight, margin + 5, insightY + 16);
     });
 
-    doc.save(`${assetName}_Report.pdf`);
+    doc.save(`${metadata.assetName}_Report.pdf`);
 }
+
+    
