@@ -116,10 +116,12 @@ function computeStats(grid: MergedGrid, nominalInput: number) {
                 maxThickness = value;
                 bestLocation = { x, y, value };
             }
-            const percentage = cell.percentage || 0;
-            if (percentage < 80) areaBelow80++;
-            if (percentage < 70) areaBelow70++;
-            if (percentage < 60) areaBelow60++;
+            
+            // This percentage is based on nominal, used for stats only
+            const nominalPercentage = nominal > 0 ? (value / nominal) * 100 : 0;
+            if (nominalPercentage < 80) areaBelow80++;
+            if (nominalPercentage < 70) areaBelow70++;
+            if (nominalPercentage < 60) areaBelow60++;
         }
     }
     
@@ -159,18 +161,43 @@ function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[
     const width = rawMergedGrid[0]?.length || 0;
     const finalGrid: MergedGrid = Array(height).fill(null).map(() => Array(width).fill(null));
 
+    // First pass to find min/max for normalization range
+    let minThick = Infinity;
+    let maxThick = -Infinity;
+     for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const cell = rawMergedGrid[y][x];
+            if (cell && cell.rawThickness > 0) {
+                const effectiveThickness = Math.min(cell.rawThickness, nominal);
+                if(effectiveThickness < minThick) minThick = effectiveThickness;
+                if(effectiveThickness > maxThick) maxThick = effectiveThickness;
+            }
+        }
+    }
+    minThick = isFinite(minThick) ? minThick : 0;
+    maxThick = isFinite(maxThick) ? maxThick : 0;
+    const range = maxThick - minThick;
+
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const cell = rawMergedGrid[y][x];
-            let effectiveThickness: number | null = null, percentage: number | null = null;
+            let effectiveThickness: number | null = null;
+            let percentage: number | null = null;
+            
             if (cell && cell.rawThickness > 0) {
                 effectiveThickness = Math.min(cell.rawThickness, nominal);
-                percentage = nominal > 0 ? (effectiveThickness / nominal) * 100 : 0;
+                // The percentage for the tooltip is now also normalized to the min/max range of the asset
+                if (range > 0) {
+                    percentage = ((effectiveThickness - minThick) / range) * 100;
+                } else {
+                    percentage = 100;
+                }
             }
             finalGrid[y][x] = {
                 plateId: cell ? cell.plateId : null,
                 rawThickness: cell && cell.rawThickness > 0 ? cell.rawThickness : null,
-                effectiveThickness, percentage
+                effectiveThickness, 
+                percentage
             };
         }
     }
@@ -229,7 +256,10 @@ function segmentAndAnalyze(grid: MergedGrid, nominalInput: number, threshold: nu
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const cell = grid[y][x];
-            if (cell && cell.percentage !== null && cell.percentage < threshold && !visited[y][x]) {
+            // Segmentation logic now uses nominal-based percentage for finding defects
+            const nominalPercentage = cell && cell.effectiveThickness && nominal > 0 ? (cell.effectiveThickness / nominal) * 100 : 100;
+            
+            if (cell && nominalPercentage < threshold && !visited[y][x]) {
                 const points: {x: number, y: number, cell: any}[] = [];
                 const queue: [number, number][] = [[x, y]];
                 visited[y][x] = true;
@@ -238,6 +268,8 @@ function segmentAndAnalyze(grid: MergedGrid, nominalInput: number, threshold: nu
                 while (queue.length > 0) {
                     const [curX, curY] = queue.shift()!;
                     const currentCell = grid[curY][curX];
+                     const currentNominalPct = currentCell && currentCell.effectiveThickness && nominal > 0 ? (currentCell.effectiveThickness / nominal) * 100 : 100;
+
                     if (currentCell && currentCell.effectiveThickness !== null) {
                         points.push({ x: curX, y: curY, cell: currentCell });
                         minThick = Math.min(minThick, currentCell.effectiveThickness);
@@ -249,7 +281,8 @@ function segmentAndAnalyze(grid: MergedGrid, nominalInput: number, threshold: nu
                         const nx = curX + dx, ny = curY + dy;
                         if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited[ny][nx]) {
                             const neighbor = grid[ny][nx];
-                            if (neighbor && neighbor.percentage !== null && neighbor.percentage < threshold) {
+                            const neighborNominalPct = neighbor && neighbor.effectiveThickness && nominal > 0 ? (neighbor.effectiveThickness / nominal) * 100 : 100;
+                            if (neighbor && neighborNominalPct < threshold) {
                                 visited[ny][nx] = true;
                                 queue.push([nx, ny]);
                             }

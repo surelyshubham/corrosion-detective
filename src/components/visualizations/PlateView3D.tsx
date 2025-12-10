@@ -170,7 +170,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   
   // Setup scene effect
   useEffect(() => {
-    if (!isReady || !mountRef.current || !inspectionResult) {
+    if (!isReady || !mountRef.current) {
         return;
     }
     
@@ -328,7 +328,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         currentMount.innerHTML = '';
       }
     };
-  }, [isReady, inspectionResult, animate, resetCamera]); 
+  }, [isReady, animate, resetCamera]); 
 
   // This effect updates textures and uniforms when data changes, WITHOUT rebuilding the scene
   useEffect(() => {
@@ -482,7 +482,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
                 <Label htmlFor="report-remarks">Remarks</Label>
                 <Textarea id="report-remarks" value={reportMetadata.remarks} onChange={(e) => setReportMetadata(prev => ({ ...prev, remarks: e.target.value }))} />
             </div>
-            <Button onClick={handleGenerateReport} disabled={isGeneratingReport} className="w-full">
+            <Button onClick={handleGenerateReport} disabled={isGeneratingReport || !segments} className="w-full">
               {isGeneratingReport ? (
                 <Loader2 className="mr-2 animate-spin" />
               ) : (
