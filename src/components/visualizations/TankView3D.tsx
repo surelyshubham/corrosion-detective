@@ -5,15 +5,14 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { useInspectionStore, type ColorMode } from '@/store/use-inspection-store'
+import { useInspectionStore } from '@/store/use-inspection-store'
 import { DataVault } from '@/store/data-vault'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { RefreshCw, Percent, Ruler, LocateFixed, Pin } from 'lucide-react'
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
+import { RefreshCw, LocateFixed, Pin } from 'lucide-react'
 import { useImperativeHandle } from 'react'
 import { ColorLegend } from './ColorLegend'
 
@@ -29,7 +28,7 @@ interface TankView3DProps {}
 
 
 export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((props, ref) => {
-  const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion } = useInspectionStore()
+  const { inspectionResult, selectedPoint, setSelectedPoint, dataVersion } = useInspectionStore()
   const mountRef = useRef<HTMLDivElement>(null)
   const [zScale, setZScale] = useState(15) // Represents radial exaggeration
   const [showOrigin, setShowOrigin] = useState(true)
@@ -379,19 +378,6 @@ export const TankView3D = React.forwardRef<TankView3DRef, TankView3DProps>((prop
             <CardTitle className="text-lg font-headline">Controls</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-2">
-                <Label>Color Scale</Label>
-                <RadioGroup value={colorMode} onValueChange={(val) => setColorMode(val as ColorMode)}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="mm" id="mm" />
-                    <Label htmlFor="mm" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/>Condition (mm)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="%" id="%" />
-                    <Label htmlFor="%" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized (%)</Label>
-                  </div>
-                </RadioGroup>
-            </div>
             <div className="space-y-3">
               <Label>Radial Exaggeration: {zScale.toFixed(1)}x</Label>
               <Slider value={[zScale]} onValueChange={([val]) => setZScale(val)} min={1} max={50} step={0.5} />

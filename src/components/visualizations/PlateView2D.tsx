@@ -2,12 +2,11 @@
 "use client"
 
 import React, { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { useInspectionStore, type ColorMode } from '@/store/use-inspection-store'
+import { useInspectionStore } from '@/store/use-inspection-store'
 import { DataVault } from '@/store/data-vault'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '../ui/label'
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group'
-import { Percent, Ruler, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
+import { ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
 import { ColorLegend } from './ColorLegend'
 
@@ -27,7 +26,7 @@ export type PlateView2DRef = {
 interface PlateView2DProps {}
 
 export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, ref) => {
-  const { inspectionResult, selectedPoint, setSelectedPoint, colorMode, setColorMode, dataVersion, segments } = useInspectionStore()
+  const { inspectionResult, selectedPoint, setSelectedPoint, dataVersion, segments } = useInspectionStore()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const xAxisRef = useRef<HTMLDivElement>(null);
@@ -258,16 +257,6 @@ export const PlateView2D = forwardRef<PlateView2DRef, PlateView2DProps>((props, 
                 <CardTitle className="font-headline text-lg">Controls</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-                <RadioGroup value={colorMode} onValueChange={(val) => setColorMode(val as ColorMode)} className="space-y-2">
-                    <Label>Color Scale</Label>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="mm" id="mm-2d" />
-                      <Label htmlFor="mm-2d" className="flex items-center gap-2 font-normal"><Ruler className="h-4 w-4"/> Condition</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="%" id="pct-2d" />
-                      <Label htmlFor="pct-2d" className="flex items-center gap-2 font-normal"><Percent className="h-4 w-4"/>Normalized</Label>                    </div>
-                </RadioGroup>
                 <div className="space-y-2">
                    <Label>Zoom ({Math.round(zoom*100)}%)</Label>
                    <div className="flex gap-2">

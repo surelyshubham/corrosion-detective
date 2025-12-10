@@ -36,7 +36,6 @@ export interface WorkerOutput {
   conflict?: ThicknessConflict;
 }
 
-export type ColorMode = 'mm' | '%';
 
 export type ProcessConfig = {
     assetType: AssetType;
@@ -80,8 +79,6 @@ interface InspectionState {
   // Interactive state
   selectedPoint: { x: number; y: number } | null;
   setSelectedPoint: (point: { x: number; y: number } | null) => void;
-  colorMode: ColorMode;
-  setColorMode: (mode: ColorMode) => void;
   dataVersion: number;
 }
 
@@ -241,7 +238,6 @@ export const useInspectionStore = create<InspectionState>()(
         isGeneratingAI: false,
         loadingProgress: 0,
         selectedPoint: null,
-        colorMode: 'mm',
         dataVersion: 0,
         error: null,
         activeTab: 'setup',
@@ -265,18 +261,6 @@ export const useInspectionStore = create<InspectionState>()(
             }, [conflict.fileBuffer]);
         },
         
-        setColorMode: (mode) => {
-            const currentResult = get().inspectionResult;
-            if (!worker || !currentResult) return;
-            // Prevent color changes from showing finalization screen
-            // set({ isFinalizing: true, loadingProgress: 50, error: null });
-            
-             worker.postMessage({
-                type: 'RECOLOR',
-                colorMode: mode,
-            });
-        },
-
         addFileToStage: async (file, config, mergeConfig) => {
             if (!worker) return;
             set({ isLoading: true, error: null });
@@ -311,7 +295,7 @@ export const useInspectionStore = create<InspectionState>()(
         finalizeProject: () => {
             if (!worker || get().stagedFiles.length === 0) return;
             set({ isFinalizing: true, loadingProgress: 0, error: null });
-            worker.postMessage({ type: 'FINALIZE', colorMode: get().colorMode, threshold: get().defectThreshold });
+            worker.postMessage({ type: 'FINALIZE', threshold: get().defectThreshold });
         },
         
         setDefectThreshold: (threshold) => set({ defectThreshold: threshold }),

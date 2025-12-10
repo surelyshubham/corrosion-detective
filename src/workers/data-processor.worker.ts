@@ -5,8 +5,6 @@ import type { MergedGrid, InspectionStats, Condition, Plate, AssetType, SegmentB
 import { type MergeFormValues } from '@/components/tabs/merge-alert-dialog';
 import { type ProcessConfig } from '@/store/use-inspection-store';
 
-type ColorMode = 'mm' | '%';
-
 export interface ThicknessConflict {
     fileName: string;
     fileBuffer: ArrayBuffer;
@@ -59,32 +57,37 @@ function universalParse(fileBuffer: ArrayBuffer, fileName: string): {rows: any[]
 }
 
 
-function getAbsoluteColor(percentage: number | null): [number, number, number, number] {
-    if (percentage === null) return [128, 128, 128, 255]; 
-    if (percentage < 60) return [255, 0, 0, 255];
-    if (percentage < 70) return [255, 165, 0, 255];
-    if (percentage < 80) return [255, 255, 0, 255];
-    if (percentage < 90) return [0, 255, 0, 255];
-    return [0, 0, 255, 255];
+function getNormalizedColor(normalizedPercent: number | null): [number, number, number, number] {
+    if (normalizedPercent === null) return [128, 128, 128, 255]; // Grey for ND
+    // Ensure normalizedPercent is between 0 and 1
+    const p = Math.max(0, Math.min(1, normalizedPercent));
+    
+    // Hue goes from blue (240) to red (0)
+    const hue = 240 * (1 - p); 
+
+    // Use a simple HSV to RGB conversion for vibrant colors
+    const saturation = 1;
+    const value = 1;
+
+    let r=0, g=0, b=0;
+    const i = Math.floor(hue / 60);
+    const f = hue / 60 - i;
+    const p1 = value * (1 - saturation);
+    const p2 = value * (1 - f * saturation);
+    const p3 = value * (1 - (1 - f) * saturation);
+
+    switch (i % 6) {
+        case 0: r = value; g = p3; b = p1; break;
+        case 1: r = p2; g = value; b = p1; break;
+        case 2: r = p1; g = value; b = p3; break;
+        case 3: r = p1; g = p2; b = value; break;
+        case 4: r = p3; g = p1; b = value; break;
+        case 5: r = value; g = p1; b = p2; break;
+    }
+
+    return [r * 255, g * 255, b * 255, 255];
 }
 
-function getNormalizedColor(normalizedPercent: number | null): [number, number, number, number] {
-    if (normalizedPercent === null) return [128, 128, 128, 255];
-    const hue = 240 * (1 - normalizedPercent);
-    const saturation = 1;
-    const lightness = 0.5;
-    const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
-    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
-    const m = lightness - c / 2;
-    let r = 0, g = 0, b = 0;
-    if (0 <= hue && hue < 60) { [r, g, b] = [c, x, 0]; }
-    else if (60 <= hue && hue < 120) { [r, g, b] = [x, c, 0]; }
-    else if (120 <= hue && hue < 180) { [r, g, b] = [0, c, x]; }
-    else if (180 <= hue && hue < 240) { [r, g, b] = [0, x, c]; }
-    else if (240 <= hue && hue < 300) { [r, g, b] = [x, 0, c]; }
-    else if (300 <= hue && hue < 360) { [r, g, b] = [c, 0, x]; }
-    return [(r + m) * 255, (g + m) * 255, (b + m) * 255, 255];
-}
 
 function computeStats(grid: MergedGrid, nominalInput: number) {
     const nominal = Number(nominalInput) || 0;
@@ -174,8 +177,7 @@ function createFinalGrid(rawMergedGrid: {plateId: string, rawThickness: number}[
     return finalGrid;
 }
 
-function createBuffers(grid: MergedGrid, nominalInput: number, min: number, max: number, colorMode: ColorMode) {
-    const nominal = Number(nominalInput) || 0;
+function createBuffers(grid: MergedGrid, min: number, max: number) {
     const height = grid.length, width = grid[0]?.length || 0;
     const displacementBuffer = new Float32Array(width * height);
     const colorBuffer = new Uint8Array(width * height * 4);
@@ -187,9 +189,10 @@ function createBuffers(grid: MergedGrid, nominalInput: number, min: number, max:
             const index = y * width + x;
             const cell = grid[flippedY][x]; 
             
-            displacementBuffer[index] = cell.effectiveThickness !== null ? cell.effectiveThickness - nominal : 0;
+            const normalizedValue = cell.effectiveThickness !== null && range > 0 ? (cell.effectiveThickness - min) / range : null;
+            displacementBuffer[index] = normalizedValue !== null ? normalizedValue : -1; // Use -1 for ND in displacement
             
-            const rgba = colorMode === '%' ? getNormalizedColor(cell.effectiveThickness !== null && range > 0 ? (cell.effectiveThickness - min) / range : null) : getAbsoluteColor(cell.percentage);
+            const rgba = getNormalizedColor(normalizedValue);
             const colorIndex = index * 4;
             [colorBuffer[colorIndex], colorBuffer[colorIndex + 1], colorBuffer[colorIndex + 2], colorBuffer[colorIndex + 3]] = rgba;
         }
@@ -276,13 +279,13 @@ function segmentAndAnalyze(grid: MergedGrid, nominalInput: number, threshold: nu
     return segments.sort((a, b) => a.worstThickness - b.worstThickness);
 }
 
-function finalizeProcessing(colorMode: ColorMode, threshold: number) {
+function finalizeProcessing(threshold: number) {
     if (!MASTER_GRID) throw new Error("Cannot finalize: MASTER_GRID is not initialized.");
     self.postMessage({ type: 'PROGRESS', progress: 50, message: 'Processing merged data...' });
 
     FINAL_GRID = createFinalGrid(MASTER_GRID.points, MASTER_GRID.baseConfig.nominalThickness);
     const { stats, condition } = computeStats(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness);
-    const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness, stats.minThickness, stats.maxThickness, colorMode);
+    const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, stats.minThickness, stats.maxThickness);
     const segments = segmentAndAnalyze(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness, threshold);
     
     const plates = MASTER_GRID.plates.map(p => ({
@@ -375,7 +378,7 @@ self.onmessage = async (event: MessageEvent<any>) => {
         }
 
         if (type === 'FINALIZE') {
-             finalizeProcessing(payload.colorMode, payload.threshold);
+             finalizeProcessing(payload.threshold);
         } else if (type === 'RESEGMENT') {
             if (!FINAL_GRID || !MASTER_GRID) return;
             const segments = segmentAndAnalyze(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness, payload.threshold);
@@ -383,7 +386,7 @@ self.onmessage = async (event: MessageEvent<any>) => {
         } else if (type === 'RECOLOR') {
              if (!FINAL_GRID || !MASTER_GRID) return;
              const { stats } = computeStats(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness);
-             const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness, stats.minThickness, stats.maxThickness, payload.colorMode);
+             const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, stats.minThickness, stats.maxThickness);
              self.postMessage({ type: 'FINALIZED', displacementBuffer, colorBuffer }, [displacementBuffer.buffer, colorBuffer.buffer]);
         }
     } catch (error: any) {
