@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -18,6 +18,20 @@ export default function ReportPage() {
   const [inspector, setInspector] = useState("Sigma NDT");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [patchVault, setPatchVault] = useState<any>(null);
+
+  useEffect(() => {
+    // Only runs on client
+    try {
+      const stored = localStorage.getItem("patchVault");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setPatchVault(parsed);
+      }
+    } catch (err) {
+      console.error("Error loading PatchVault:", err);
+    }
+  }, []);
 
   async function generatePdf() {
     try {
@@ -25,7 +39,7 @@ export default function ReportPage() {
       setProgress(3);
 
       // 1. Load Data
-      const topPatches = pickTopNPatches(10);
+      const topPatches = pickTopNPatches(patchVault, 10);
       if (!topPatches.length) {
         alert("No patches found. Please process a file first.");
         setBusy(false);
@@ -82,11 +96,10 @@ export default function ReportPage() {
 
       // Patch Pages
       topPatches.forEach((meta, rank) => {
-        const entry = getPatchFromVault(meta.id);
+        const entry = getPatchFromVault(patchVault, meta.id);
         // Ensure we actually have URLs
         const urls = entry ? getPatchViewUrls(entry) : [];
         
-        // DEBUG: Check if we are getting URLs
         if (urls.length === 0) console.warn(`Patch ${meta.id} has no images!`);
 
         const page = document.createElement("div");
@@ -105,7 +118,8 @@ export default function ReportPage() {
         page.innerHTML = `
           <h2 style="margin-top:0;">Patch ${meta.id} — Rank ${rank + 1}</h2>
           <div><strong>Area:</strong> ${(meta.area_m2 ?? 0).toFixed(4)} m²</div>
-          <div><strong>Max Depth:</strong> ${meta.maxDepth_mm ?? "-"} mm</div>
+          <div><strong>Min Thickness:</strong> ${meta.worstThickness?.toFixed(2) ?? "-"} mm</div>
+          <div><strong>Severity:</strong> ${meta.tier ?? "-"}</div>
           <br />
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
             ${imgHtml || '<div>No Images Available</div>'}
@@ -124,7 +138,6 @@ export default function ReportPage() {
       setProgress(50);
 
       // --- THE FIX: WAIT FOR IMAGES TO LOAD ---
-      // We explicitly find all <img> tags and wait for their onload event
       const allImages = Array.from(container.querySelectorAll("img"));
       await Promise.all(allImages.map(img => {
           if (img.complete) return Promise.resolve();
@@ -175,7 +188,6 @@ export default function ReportPage() {
     }
   }
 
-
   return (
     <div style={{ padding: 30 }}>
       <h1>Corrosion Report Generator</h1>
@@ -207,7 +219,7 @@ export default function ReportPage() {
 
       <button
         onClick={generatePdf}
-        disabled={busy}
+        disabled={busy || !patchVault}
         style={{
           marginTop: 30,
           padding: "10px 22px",
@@ -215,10 +227,13 @@ export default function ReportPage() {
           background: "#0284c7",
           color: "white",
           borderRadius: 8,
+          cursor: (busy || !patchVault) ? 'not-allowed' : 'pointer',
+          opacity: (busy || !patchVault) ? 0.5 : 1,
         }}
       >
         {busy ? `Generating... ${progress}%` : "Generate Corrosion PDF Report"}
       </button>
+      {!patchVault && <p style={{color: '#f56565', fontSize: '12px', marginTop: '8px'}}>No data found. Please process a file in the main app first.</p>}
     </div>
   );
 }

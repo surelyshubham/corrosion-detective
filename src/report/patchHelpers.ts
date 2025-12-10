@@ -1,49 +1,112 @@
+
 // src/report/patchHelpers.ts
 import { jsPDF } from 'jspdf';
 
-export async function generatePdfReport({ assetId, inspector, patches }: { assetId: string, inspector: string, patches: any }) {
-  console.log("Generating PDF with patches:", patches);
+export type Severity = 'low' | 'medium' | 'high' | 'critical' | string;
 
-  if (!patches || Object.keys(patches).length === 0) {
-    alert("PatchVault is empty. Please process a file first.");
-    return;
+export type PatchMeta = {
+  id: string;
+  area_m2?: number;
+  avgDepth_mm?: number;
+  maxDepth_mm?: number;
+  severity?: Severity;
+  shortInsight?: string;
+  detectionIndex?: number;
+  worstThickness?: number;
+  tier?: string;
+};
+
+export type PatchEntry = {
+  meta?: {
+    area_m2?: number;
+    avgDepth_mm?: number;
+    maxDepth_mm?: number;
+    severity?: Severity;
+    shortInsight?: string;
+    worstThickness?: number;
+    tier?: string;
+  };
+  images?: { isoViewDataUrl?: string; topViewDataUrl?: string; sideViewDataUrl?: string; heatmapDataUrl?: string; };
+  buffers?: Array<{ name: string; url?: string }>;
+};
+
+function severityScore(sev?: Severity) {
+  if (!sev) return 0;
+  if (sev === 'critical') return 1;
+  if (sev === 'high') return 0.85;
+  if (sev === 'medium') return 0.5;
+  if (sev === 'low') return 0.2;
+  return 0;
+}
+
+// Get all patch IDs from the vault object
+export function getAllPatchIdsFromVault(vault: {[key: string]: any} | null): string[] {
+  if (!vault) return [];
+  return Object.keys(vault);
+}
+
+// Get single patch entry by id from the vault object
+export function getPatchFromVault(vault: {[key: string]: any} | null, id: string): PatchEntry | undefined {
+  if (!vault) return undefined;
+  return vault[id];
+}
+
+// Extract up to 4 view URLs
+export function getPatchViewUrls(entry: PatchEntry): string[] {
+  const urls: string[] = [];
+  if (entry.images) {
+    const { isoViewDataUrl, topViewDataUrl, sideViewDataUrl, heatmapDataUrl } = entry.images;
+    if (isoViewDataUrl) urls.push(isoViewDataUrl);
+    if (topViewDataUrl) urls.push(topViewDataUrl);
+    if (sideViewDataUrl) urls.push(sideViewDataUrl);
+    if (heatmapDataUrl) urls.push(heatmapDataUrl);
   }
+  return urls.slice(0, 4);
+}
 
-  // Use patches to create images + table
-  // ---------------------------
-  // Example:
-  const doc = new jsPDF();
+// Build scoring meta for all patches
+export function buildPatchMetaList(vault: {[key: string]: any} | null): PatchMeta[] {
+  if (!vault) return [];
+  const ids = getAllPatchIdsFromVault(vault);
+  return ids.map((id, index) => {
+    const entry = getPatchFromVault(vault, id) || {};
+    const m = entry.meta || {};
+    return {
+      id,
+      area_m2: m.area_m2,
+      avgDepth_mm: m.avgDepth_mm,
+      maxDepth_mm: m.maxDepth_mm,
+      severity: m.severity,
+      shortInsight: m.shortInsight,
+      detectionIndex: index,
+      worstThickness: m.worstThickness,
+      tier: m.tier,
+    };
+  });
+}
 
-  doc.text(`Corrosion Report`, 10, 10);
-  doc.text(`Asset ID: ${assetId}`, 10, 20);
-  doc.text(`Inspector: ${inspector}`, 10, 30);
+// Pick top N patches by simple severity+area+depth score
+export function pickTopNPatches(vault: {[key: string]: any} | null, n: number): PatchMeta[] {
+  const all = buildPatchMetaList(vault);
+  if (!all.length) return [];
 
-  let y = 50;
-  for (const patchId in patches) {
-    if (y > 250) { // Add a new page if content overflows
-        doc.addPage();
-        y = 20;
-    }
-    const patch = patches[patchId];
-    
-    doc.text(`Patch ID: ${patchId}`, 10, y);
-    y += 7;
-    doc.text(`Severity: ${patch.meta?.tier || 'N/A'}`, 15, y);
-    y += 7;
-    doc.text(`Min Thickness: ${patch.meta?.worstThickness?.toFixed(2) || 'N/A'} mm`, 15, y);
-    y += 10;
+  const maxArea = Math.max(...all.map(p => p.area_m2 ?? 0), 1);
+  const maxDepth = Math.max(...all.map(p => p.avgDepth_mm ?? 0), 1);
 
-    // CORRECTED: Look for the image in the right place
-    if(patch.images?.isoViewDataUrl) {
-        try {
-            // Add the image from the data URL
-            doc.addImage(patch.images.isoViewDataUrl, 'JPEG', 15, y, 80, 60);
-             y += 70; // Move down after adding image
-        } catch (e) {
-            console.error(`Could not add image for patch ${patchId}`, e);
-        }
-    }
-  }
+  const scored = all.map(p => {
+    const score =
+      0.5 * severityScore(p.severity) +
+      0.25 * ((p.area_m2 ?? 0) / maxArea) +
+      0.2 * ((p.avgDepth_mm ?? 0) / maxDepth);
+    return { ...p, score };
+  });
 
-  doc.save(`Corrosion-Report-${assetId}.pdf`);
+  scored.sort((a, b) => {
+    if ((b.worstThickness ?? Infinity) < (a.worstThickness ?? Infinity)) return -1;
+    if ((b.worstThickness ?? Infinity) > (a.worstThickness ?? Infinity)) return 1;
+    if (b.score !== a.score) return b.score - a.score;
+    return (a.detectionIndex ?? 0) - (b.detectionIndex ?? 0);
+  });
+
+  return scored.slice(0, n);
 }
