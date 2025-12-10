@@ -14,35 +14,36 @@ export async function generatePdfReport({ assetId, inspector, patches }: { asset
   // Example:
   const doc = new jsPDF();
 
-  doc.text(`Asset ID: ${assetId}`, 10, 10);
-  doc.text(`Inspector: ${inspector}`, 10, 20);
+  doc.text(`Corrosion Report`, 10, 10);
+  doc.text(`Asset ID: ${assetId}`, 10, 20);
+  doc.text(`Inspector: ${inspector}`, 10, 30);
 
-  let y = 40;
+  let y = 50;
   for (const patchId in patches) {
-    if (y > 250) {
+    if (y > 250) { // Add a new page if content overflows
         doc.addPage();
         y = 20;
     }
     const patch = patches[patchId];
-
-    doc.text(`Patch ${patchId}`, 10, y);
-    y += 10;
     
-    // Check if image data exists and is a valid format
-    if (patch.images?.isoViewDataUrl && patch.images.isoViewDataUrl.startsWith('data:image')) {
-      try {
-        doc.addImage(patch.images.isoViewDataUrl, "JPEG", 10, y, 120, 80);
-        y += 90;
-      } catch (e) {
-          console.error(`Failed to add image for patch ${patchId}:`, e);
-          doc.text(`(Image for patch ${patchId} could not be loaded)`, 10, y);
-          y += 10;
-      }
-    } else {
-        doc.text(`(No image available for patch ${patchId})`, 10, y);
-        y+= 10;
+    doc.text(`Patch ID: ${patchId}`, 10, y);
+    y += 7;
+    doc.text(`Severity: ${patch.meta?.tier || 'N/A'}`, 15, y);
+    y += 7;
+    doc.text(`Min Thickness: ${patch.meta?.worstThickness?.toFixed(2) || 'N/A'} mm`, 15, y);
+    y += 10;
+
+    // CORRECTED: Look for the image in the right place
+    if(patch.images?.isoViewDataUrl) {
+        try {
+            // Add the image from the data URL
+            doc.addImage(patch.images.isoViewDataUrl, 'JPEG', 15, y, 80, 60);
+             y += 70; // Move down after adding image
+        } catch (e) {
+            console.error(`Could not add image for patch ${patchId}`, e);
+        }
     }
   }
 
-  doc.save(`corrosion_report_${assetId}.pdf`);
+  doc.save(`Corrosion-Report-${assetId}.pdf`);
 }
