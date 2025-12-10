@@ -1,4 +1,3 @@
-
 'use client';
 // src/components/tabs/report-tab.tsx
 import React, { useState } from 'react';
@@ -6,9 +5,10 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
   pickTopNPatches,
-  getPatchFromVault,
   getPatchViewUrls,
+  type PatchMeta,
 } from '@/report/patchHelpers';
+import { useInspectionStore } from '@/store/use-inspection-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,20 +56,27 @@ const watermarkStyle = `
 `;
 
 export const ReportTab: React.FC = () => {
-  const [assetId, setAssetId] = useState('ASSET-001');
-  const [inspector, setInspector] = useState('Inspector Name');
+  const { inspectionResult } = useInspectionStore();
+  const allSegments = inspectionResult?.segments || [];
+  
+  const [assetId, setAssetId] = useState(inspectionResult?.assetType || 'ASSET-001');
+  const [inspector, setInspector] = useState('Sigma NDT');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
-
+  
   async function generatePdf() {
+    if (!inspectionResult) {
+        alert('No inspection data loaded. Please process a file first.');
+        return;
+    }
     try {
       setBusy(true);
       setProgress(2);
 
-      // 1) pick top-10 patches
-      const top = pickTopNPatches(10);
-      if (!top.length) {
-        alert('No patches found in PatchVault. Please process a file first.');
+      const topPatchesMeta = pickTopNPatches(allSegments, 10);
+      
+      if (!topPatchesMeta.length) {
+        alert('No corrosion patches detected to generate a report.');
         setBusy(false);
         setProgress(0);
         return;
@@ -77,7 +84,6 @@ export const ReportTab: React.FC = () => {
 
       setProgress(5);
 
-      // 2) logo for cover + watermark
       const logoBase64 = await fetch(LOGO_URL)
         .then(r => r.blob())
         .then(
@@ -92,7 +98,6 @@ export const ReportTab: React.FC = () => {
 
       setProgress(10);
 
-      // 3) prepare hidden container
       const container = document.createElement('div');
       container.style.position = 'fixed';
       container.style.left = '-9999px';
@@ -113,7 +118,7 @@ export const ReportTab: React.FC = () => {
             .toISOString()
             .slice(0, 10)}</div>
           <div style="width:60%; text-align:center; color:#333; font-size:13px;">
-            <p>This report summarizes the top ${top.length} corrosion patches based on severity, depth, and area. Full dataset remains available in the analysis system.</p>
+            <p>This report summarizes the top ${topPatchesMeta.length} corrosion patches based on severity and area. Full dataset remains available in the analysis system.</p>
           </div>
         </div>
       `;
@@ -152,9 +157,11 @@ export const ReportTab: React.FC = () => {
       setProgress(25);
 
       // --- PATCH PAGES ---
-      top.forEach((meta, idx) => {
-        const entry = getPatchFromVault(meta.id);
-        const urls = entry ? getPatchViewUrls(entry) : [];
+      topPatchesMeta.forEach((meta, idx) => {
+        const entry = allSegments.find(s => s.id === meta.id);
+        if (!entry) return;
+
+        const urls = getPatchViewUrls(entry);
         const page = document.createElement('div');
         page.setAttribute('style', pageStyle);
 
@@ -164,12 +171,11 @@ export const ReportTab: React.FC = () => {
         // left column = stats
         html += `
           <div style="width:36%; font-size:13px; color:#333;">
-            <div><strong>Area:</strong> ${(meta.area_m2 ?? 0).toFixed(4)} m²</div>
-            <div><strong>Avg Depth:</strong> ${meta.avgDepth_mm ?? '-'} mm</div>
-            <div><strong>Max Depth:</strong> ${meta.maxDepth_mm ?? '-'} mm</div>
-            <div><strong>Severity:</strong> ${meta.severity ?? '-'}</div>
+            <div><strong>Severity:</strong> ${entry.tier ?? '-'}</div>
+            <div><strong>Min Thickness:</strong> ${entry.worstThickness.toFixed(2) ?? '-'} mm</div>
+            <div><strong>Avg Thickness:</strong> ${entry.avgThickness.toFixed(2) ?? '-'} mm</div>
             <div style="margin-top:8px;"><strong>Remark:</strong>
-              <div style="margin-top:6px; color:#555">${meta.shortInsight || '-'}</div>
+              <div style="margin-top:6px; color:#555">${entry.aiObservation || 'Further investigation recommended.'}</div>
             </div>
           </div>
         `;
@@ -207,8 +213,8 @@ export const ReportTab: React.FC = () => {
         <h2 style="margin-top:0">Appendix</h2>
         <p style="font-size:13px; color:#444;">
           The complete corrosion dataset, including all detected patches and raw thickness maps,
-          is stored within the analysis system (PatchVault/DataVault). This PDF presents a
-          focused summary of the most significant ${top.length} patches.
+          is stored within the application. This PDF presents a
+          focused summary of the most significant ${topPatchesMeta.length} patches.
         </p>
       `;
       const wmA = document.createElement('img');
@@ -291,8 +297,7 @@ export const ReportTab: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-6">
             <p className="text-sm text-muted-foreground">
-            This tool generates a lightweight PDF report using cached patch views from the data vault.
-            It does not re-render 2D/3D views and does not upload anything to a server.
+            This tool generates a lightweight PDF report using cached patch views from the data vault. It does not re-render 2D/3D views and does not upload anything to a server.
             </p>
 
             <div className="grid grid-cols-2 gap-4">
