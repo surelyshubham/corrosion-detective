@@ -1,6 +1,6 @@
 
 'use client';
-// src/app/report/page.tsx
+// src/components/tabs/report-tab.tsx
 import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -9,6 +9,11 @@ import {
   getPatchFromVault,
   getPatchViewUrls,
 } from '@/report/patchHelpers';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 
 const LOGO_URL = 'https://www.sigmandt.com/images/logo.png';
 
@@ -50,7 +55,7 @@ const watermarkStyle = `
   filter: grayscale(100%);
 `;
 
-const ReportPage: React.FC = () => {
+export const ReportTab: React.FC = () => {
   const [assetId, setAssetId] = useState('ASSET-001');
   const [inspector, setInspector] = useState('Inspector Name');
   const [busy, setBusy] = useState(false);
@@ -279,56 +284,48 @@ const ReportPage: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 720, margin: 'auto' }}>
-      <div className="p-6 border rounded-lg bg-card text-card-foreground">
-        <h1 className="text-2xl font-headline font-bold">Corrosion Report Generator</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          This page generates a lightweight PDF report using cached patch views from the data vault.
-          It does not re-render 2D/3D views and does not upload anything to a server.
-        </p>
+    <div className="max-w-3xl mx-auto p-4">
+      <Card>
+        <CardHeader>
+            <CardTitle className="font-headline">Corrosion Report Generator</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+            This tool generates a lightweight PDF report using cached patch views from the data vault.
+            It does not re-render 2D/3D views and does not upload anything to a server.
+            </p>
 
-        <div className="grid grid-cols-2 gap-4 my-6">
-          <div>
-            <label className="text-sm font-medium">Asset ID</label>
-            <input
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2 bg-background border"
-              value={assetId}
-              onChange={e => setAssetId(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Inspector</label>
-            <input
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2 bg-background border"
-              value={inspector}
-              onChange={e => setInspector(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <button onClick={generatePdf} disabled={busy} className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full">
-          {busy ? `Generating... ${progress}%` : 'Generate Corrosion PDF Report'}
-        </button>
-
-        {busy && (
-          <div className="mt-4">
-            <div className="text-sm text-center text-muted-foreground">Progress: {progress}%</div>
-            <div
-              className="mt-2 w-full bg-secondary rounded-full h-2.5"
-            >
-              <div
-                className="bg-primary h-2.5 rounded-full"
-                style={{
-                  width: `${progress}%`,
-                  transition: 'width 0.2s',
-                }}
-              />
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="assetId">Asset ID</Label>
+                    <Input
+                    id="assetId"
+                    value={assetId}
+                    onChange={e => setAssetId(e.target.value)}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="inspector">Inspector</Label>
+                    <Input
+                    id="inspector"
+                    value={inspector}
+                    onChange={e => setInspector(e.target.value)}
+                    />
+                </div>
             </div>
-          </div>
-        )}
-      </div>
+
+            <Button onClick={generatePdf} disabled={busy} className="w-full">
+            {busy ? `Generating... ${progress}%` : 'Generate Corrosion PDF Report'}
+            </Button>
+
+            {busy && (
+                <div className="space-y-2">
+                    <Label>Progress: {progress}%</Label>
+                    <Progress value={progress} />
+                </div>
+            )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
-
-export default ReportPage;

@@ -1,7 +1,4 @@
 import { Sigma } from "lucide-react"
-import Link from "next/link";
-import { Button } from "./ui/button";
-import { FileText } from "lucide-react";
 
 export function Header() {
   return (
@@ -14,14 +11,6 @@ export function Header() {
           Sigma Corrosion Detective
         </h1>
         <span className="text-xs font-mono text-muted-foreground mt-1">V1</span>
-      </div>
-      <div className="flex items-center gap-4">
-        <Button asChild variant="outline">
-            <Link href="/report">
-                <FileText className="mr-2"/>
-                Go to Report Page
-            </Link>
-        </Button>
       </div>
     </header>
   )
