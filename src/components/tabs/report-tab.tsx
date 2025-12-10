@@ -31,6 +31,11 @@ interface ReportTabProps {
   twoDViewRef: React.RefObject<TwoDeeViewRef>;
 }
 
+const dataURLToArrayBuffer = async (dataUrl: string): Promise<ArrayBuffer> => {
+    const res = await fetch(dataUrl);
+    return res.arrayBuffer();
+}
+
 export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
   const { inspectionResult, segments } = useInspectionStore();
   const { toast } = useToast();
@@ -116,17 +121,17 @@ export function ReportTab({ threeDViewRef, twoDViewRef }: ReportTabProps) {
 
         captureFunctions3D.setView('iso');
         await new Promise(resolve => setTimeout(resolve, 100));
-        const isoViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture() as any);
+        const isoViewBuffer = await dataURLToArrayBuffer(captureFunctions3D.capture());
 
         captureFunctions3D.setView('top');
         await new Promise(resolve => setTimeout(resolve, 100));
-        const topViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture() as any);
+        const topViewBuffer = await dataURLToArrayBuffer(captureFunctions3D.capture());
 
         captureFunctions3D.setView('side');
         await new Promise(resolve => setTimeout(resolve, 100));
-        const sideViewBuffer = await canvasToArrayBuffer(captureFunctions3D.capture() as any);
+        const sideViewBuffer = await dataURLToArrayBuffer(captureFunctions3D.capture());
         
-        const heatmapBuffer = await canvasToArrayBuffer(captureFunctions2D.capture() as any);
+        const heatmapBuffer = await dataURLToArrayBuffer(captureFunctions2D.capture());
         
         const aiObservation = await generatePatchSummary(segment, inspectionResult.nominalThickness, inspectionResult.assetType, threshold);
 
