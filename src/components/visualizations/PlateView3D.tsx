@@ -1,4 +1,3 @@
-
 "use client"
 
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
@@ -78,11 +77,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     try {
         // 1. Run the Robot (Capture Images)
         rendererRef.current.localClippingEnabled = true;
-        // This function name is hypothetical. It needs to be implemented.
-        // For now, let's assume it returns an array of patch image data URLs
-        const patchImages = await Promise.all(
-          segments.map(seg => capturePatchImagesForSegment(String(seg.id)))
-        );
+        const patchImages = await capturePatchImagesForSegment(String(segments[0]?.id));
         rendererRef.current.localClippingEnabled = false; 
 
         // 2. Gather User Input
@@ -96,11 +91,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         };
 
         // 3. Create PDF
-        // This is also hypothetical and needs a proper implementation
-        // await generateFinalReport(metadata, patchImages);
-        console.log("Report generation function called with:", metadata, patchImages);
-        alert("Report generation is a placeholder. Check console for captured data.");
-
+        await generateFinalReport(metadata, [patchImages]); // Assuming generateFinalReport can handle the structure
 
     } catch(err) {
         console.error("Report generation failed:", err);
@@ -115,19 +106,21 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         const { width, height } = stats.gridSize;
         const aspect = height / width;
         const visualHeight = VISUAL_WIDTH * aspect;
-        controlsRef.current.target.set(0, 0, 0); // Always target the center (Mesh is centered)
+        
+        // Target is the center of the plate
+        controlsRef.current.target.set(VISUAL_WIDTH / 2, 0, visualHeight / 2);
         
         const distance = Math.max(VISUAL_WIDTH, visualHeight) * 1.5;
         switch (view) {
             case 'top':
-                cameraRef.current.position.set(0, distance, 0.01); 
+                cameraRef.current.position.set(VISUAL_WIDTH / 2, distance, visualHeight / 2); 
                 break;
             case 'side':
-                cameraRef.current.position.set(distance, 0, 0);
+                 cameraRef.current.position.set(VISUAL_WIDTH + distance, 0, visualHeight / 2);
                 break;
             case 'iso':
             default:
-                 cameraRef.current.position.set(distance / 2, distance / 2, distance / 2);
+                 cameraRef.current.position.set(VISUAL_WIDTH, distance / 1.5, visualHeight);
                 break;
         }
         controlsRef.current.update();
@@ -148,8 +141,8 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         const visualHeight = VISUAL_WIDTH * aspect;
 
         // Map grid coordinate to visual coordinate
-        const targetX = (x / (width - 1)) * VISUAL_WIDTH - (VISUAL_WIDTH / 2);
-        const targetZ = (y / (height - 1)) * visualHeight - (visualHeight / 2);
+        const targetX = (x / (width - 1)) * VISUAL_WIDTH;
+        const targetZ = (y / (height - 1)) * visualHeight;
         
         controlsRef.current.target.set(targetX, 0, targetZ);
         
@@ -205,8 +198,6 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
         Math.max(1, width - 1),
         Math.max(1, height - 1)
     );
-    // CRITICAL FIX: Center the geometry so even if data is far away, the mesh is at 0,0,0
-    geometry.center(); 
     
     const { displacementBuffer, colorBuffer } = DataVault;
     if (!displacementBuffer || !colorBuffer) return;
@@ -234,23 +225,23 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     
     meshRef.current = new THREE.Mesh(geometry, material);
     meshRef.current.rotation.x = -Math.PI / 2;
-    meshRef.current.position.set(0, 0, 0);
+    // Reposition mesh so its top-left is at (0,0,0)
+    meshRef.current.position.set(VISUAL_WIDTH / 2, 0, visualHeight / 2);
     sceneRef.current.add(meshRef.current);
 
-    // --- PRO AXES HELPER (Moved to avoid overlap) ---
+    // --- PRO AXES HELPER (At 0,0,0) ---
     originAxesRef.current = new THREE.Group();
-    const axesLength = Math.max(VISUAL_WIDTH, visualHeight) * 0.2;
-    const originSphere = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshBasicMaterial({color: 0x000000}));
-    const xAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, axesLength), new THREE.MeshBasicMaterial({color: 'red'}));
+    const axesLength = Math.max(VISUAL_WIDTH, visualHeight) * 0.1;
+    const originSphere = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0x000000}));
+    const xAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, axesLength), new THREE.MeshBasicMaterial({color: 'red'}));
     xAxis.position.x = axesLength / 2;
     xAxis.rotation.z = -Math.PI / 2;
-    const zAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, axesLength), new THREE.MeshBasicMaterial({color: 'blue'}));
+    const zAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, axesLength), new THREE.MeshBasicMaterial({color: 'blue'}));
     zAxis.position.z = axesLength / 2;
     
     originAxesRef.current.add(originSphere, xAxis, zAxis);
     sceneRef.current.add(originAxesRef.current);
-    // FIX: Moved down by 10 units and Left by 10 units to clear the view
-    originAxesRef.current.position.set(-10, -10, -10); 
+    originAxesRef.current.position.set(0, 0, 0); 
 
 
     // Reference Plane
@@ -259,7 +250,7 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
       new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
     );
     referencePlaneRef.current.rotation.x = -Math.PI / 2;
-    referencePlaneRef.current.position.set(0, 0, 0); 
+    referencePlaneRef.current.position.set(VISUAL_WIDTH / 2, 0, visualHeight / 2); 
     referencePlaneRef.current.visible = showReference;
     sceneRef.current.add(referencePlaneRef.current);
 
@@ -335,8 +326,11 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
               if (object instanceof THREE.Mesh) {
                   if (object.geometry) object.geometry.dispose();
                   if (object.material) {
-                      if (Array.isArray(object.material)) object.material.forEach((m: any) => m.dispose());
-                      else (object.material as THREE.Material).dispose();
+                      if (Array.isArray(object.material)) {
+                        (object.material as THREE.Material[]).forEach(m => m.dispose());
+                      } else {
+                        (object.material as THREE.Material).dispose();
+                      }
                   }
               }
           });
@@ -369,14 +363,14 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
           const visualHeight = VISUAL_WIDTH * aspect;
 
           if (worstLocation) {
-            const minX = (worstLocation.x / gridSize.width) * VISUAL_WIDTH - (VISUAL_WIDTH / 2);
-            const minZ = (worstLocation.y / gridSize.height) * visualHeight - (visualHeight / 2);
+            const minX = (worstLocation.x / gridSize.width) * VISUAL_WIDTH;
+            const minZ = (worstLocation.y / gridSize.height) * visualHeight;
             const minY = (worstLocation.value - nominalThickness) * zScale;
             minMarkerRef.current.position.set(minX, minY + 4, minZ);
           }
           if (bestLocation) {
-            const maxX = (bestLocation.x / gridSize.width) * VISUAL_WIDTH - (VISUAL_WIDTH / 2);
-            const maxZ = (bestLocation.y / gridSize.height) * visualHeight - (visualHeight / 2);
+            const maxX = (bestLocation.x / gridSize.width) * VISUAL_WIDTH;
+            const maxZ = (bestLocation.y / gridSize.height) * visualHeight;
             const maxY = (bestLocation.value - nominalThickness) * zScale;
             maxMarkerRef.current.position.set(maxX, maxY + 4, maxZ);
           }
@@ -514,6 +508,5 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
-
 
     
