@@ -17,130 +17,133 @@ export function parseExcel(file: ArrayBuffer): ParsedExcelResult {
   }
   const sheet = workbook.Sheets[sheetName];
 
-  // Get all rows including empty cells to preserve structure
-  const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1 });
+  // 'defval' ensures we get empty strings for empty cells instead of undefined, keeping structure intact
+  const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
   
   let headerRowIndex = -1;
 
-  // --- 1. ROBUST HEADER DETECTION ---
-  // Loop through rows to find where the Data Grid actually starts.
-  // We ignore the first column (Column A) because it often contains labels like "mm" or is empty.
+  // --- 1. FIND THE HEADER ROW (Robust Mode) ---
   for (let i = 0; i < Math.min(rows.length, 100); i++) { 
     const row = rows[i];
     if (!row || row.length < 2) continue;
     
     let numberCount = 0;
-    let cellCount = 0;
+    let validCells = 0;
 
-    // Start checking from column 1 (Index 1) to ignore Column 0
+    // Start checking from index 1 (skip col 0)
     for (let j = 1; j < row.length; j++) {
       const cellVal = row[j];
-      // Check if cell has value
-      if (cellVal !== null && cellVal !== undefined && cellVal !== '') {
-        cellCount++;
-        // Check if it is a valid number (coordinates are usually numbers)
-        if (!isNaN(parseFloat(cellVal as string))) {
+      // Check if not empty
+      if (cellVal !== '' && cellVal !== null && cellVal !== undefined) {
+        validCells++;
+        // Check if strictly a number
+        const num = parseFloat(String(cellVal).trim());
+        if (!isNaN(num) && isFinite(num)) {
           numberCount++;
         }
       }
     }
 
-    // Heuristic: If >80% of the cells in this row (excluding Col A) are numbers, it's the header.
-    if (cellCount > 5 && (numberCount / cellCount) > 0.8) {
+    // If >80% of data cells are valid numbers, this is the header.
+    // We added 'validCells > 5' to avoid matching empty rows with 1 random number.
+    if (validCells > 5 && (numberCount / validCells) > 0.8) {
       headerRowIndex = i;
       break;
     }
   }
 
   if (headerRowIndex === -1) {
-    throw new Error("Could not detect the C-Scan data grid header row. Please ensure the file has a row with numeric X-coordinates.");
+    throw new Error("Could not detect Header Row. Please check file format.");
   }
 
-  // --- 2. METADATA PARSING ---
+  // --- 2. EXTRACT METADATA ---
   let detectedNominalThickness: number | null = null;
   let maxThicknessValue: number | null = null;
   const metadata: any[][] = [];
   
   for (let i = 0; i < headerRowIndex; i++) {
     const row = rows[i];
-    // Try to grab key-value pairs (e.g., "Item = Value")
-    if (row && (row[0] !== undefined || row[1] !== undefined)) {
-      const rawKey = row[0] ? String(row[0]) : '';
-      // Clean up key (remove "=..." and "(mm)...")
-      const key = rawKey.split('=')[0].split('(')[0].trim().toLowerCase();
-      
-      // Try to find value in Column B, otherwise split Column A
-      let valueString = row[1] !== undefined ? String(row[1]) : (rawKey.split('=')[1]?.trim() || '');
-      const value = parseFloat(valueString);
-      
-      metadata.push([rawKey, valueString]);
+    if (!row) continue;
+    
+    // Attempt to read "Key = Value" from col 0 or "Key" "Value" from col 0,1
+    let keyRaw = row[0] ? String(row[0]) : '';
+    let valRaw = row[1] ? String(row[1]) : '';
+    
+    if (keyRaw.includes('=')) {
+      const parts = keyRaw.split('=');
+      keyRaw = parts[0];
+      valRaw = parts[1]; // Value might be in the same cell
+    }
 
-      if (key.includes('nominal thickness')) {
-        if (!isNaN(value)) detectedNominalThickness = value;
-      } else if (key.includes('max thickness')) {
-        if (!isNaN(value)) maxThicknessValue = value;
-      }
+    const key = keyRaw.toLowerCase();
+    const valStr = valRaw.trim();
+    const valNum = parseFloat(valStr);
+
+    if (key) {
+        metadata.push([keyRaw.trim(), valStr]);
+        if (key.includes('nominal thickness') && !isNaN(valNum)) detectedNominalThickness = valNum;
+        if (key.includes('max thickness') && !isNaN(valNum)) maxThicknessValue = valNum;
     }
   }
+  
+  if (detectedNominalThickness === null) detectedNominalThickness = maxThicknessValue;
 
-  if (detectedNominalThickness === null && maxThicknessValue !== null) {
-      detectedNominalThickness = maxThicknessValue;
+  // --- 3. PARSE X-AXIS COORDINATES ---
+  const headerRow = rows[headerRowIndex];
+  // Map columns to X-coordinates. Index 0 of `xCoords` corresponds to Column 1 of Excel.
+  const xCoords: (number | null)[] = [];
+  
+  for (let j = 1; j < headerRow.length; j++) {
+      const val = parseFloat(String(headerRow[j]).trim());
+      if (!isNaN(val) && isFinite(val)) {
+          xCoords.push(val);
+      } else {
+          xCoords.push(null); // Mark invalid columns so we skip them later
+      }
   }
 
-  // --- 3. COORDINATE PARSING (SAFE ALIGNMENT) ---
-  const xCoordsRow = rows[headerRowIndex];
-  
-  // Create an array of X-coordinates corresponding to columns.
-  // We slice(1) to skip Column A, but we DO NOT filter invalid numbers yet.
-  // We keep 'null' for invalid columns to maintain the index alignment (j-1).
-  const xCoords: (number | null)[] = xCoordsRow.slice(1).map((val: any) => {
-      const num = parseFloat(val);
-      return isNaN(num) ? null : num;
-  });
-
+  // --- 4. PARSE DATA POINTS ---
   const data: Omit<InspectionDataPoint, 'effectiveThickness' | 'deviation' | 'percentage' | 'wallLoss'>[] = [];
   
-  // --- 4. DATA PARSING ---
-  // Start parsing data from the row right after the header
   for (let i = headerRowIndex + 1; i < rows.length; i++) {
-    const dataRow = rows[i];
-    // Valid data row must have a Y-coordinate in Column 0
-    if (!dataRow || dataRow[0] === undefined || dataRow[0] === null || isNaN(Number(dataRow[0]))) continue;
+    const row = rows[i];
+    if (!row) continue;
 
-    const y = Number(dataRow[0]);
-    
-    // Iterate through data columns starting at 1
-    for (let j = 1; j < dataRow.length; j++) {
-      // Map column index 'j' to xCoords index 'j-1'
-      const x = xCoords[j - 1];
-      
-      // If this column didn't have a valid X-header, skip it (safe alignment)
-      if (x === null || x === undefined) continue;
+    // Y Coordinate is always in Column 0
+    const yVal = parseFloat(String(row[0]).trim());
+    if (isNaN(yVal)) continue; // Skip rows without valid Y label
 
-      const thicknessValue = dataRow[j];
-      let rawThickness: number | null;
+    // Iterate Data Columns
+    for (let j = 1; j < row.length; j++) {
+        // Match with X Coordinate
+        const xIndex = j - 1; 
+        if (xIndex >= xCoords.length) break; 
+        
+        const xVal = xCoords[xIndex];
+        if (xVal === null) continue; // Skip if this column didn't have a header
 
-      if (thicknessValue === null || thicknessValue === undefined || String(thicknessValue).trim() === '' || Number.isNaN(Number(thicknessValue))) {
-        rawThickness = null;
-      } else {
-        rawThickness = Number(thicknessValue);
-      }
-      
-      data.push({
-        x: x,
-        y: y,
-        rawThickness: rawThickness,
-      });
+        // Parse Thickness
+        const rawVal = row[j];
+        let thickness: number | null = null;
+        
+        if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
+            const parsed = parseFloat(String(rawVal).trim());
+            if (!isNaN(parsed) && isFinite(parsed)) {
+                thickness = parsed;
+            }
+        }
+        
+        data.push({
+            x: xVal,
+            y: yVal,
+            rawThickness: thickness
+        });
     }
   }
 
   if (data.length === 0) {
-      throw new Error("Data grid was detected, but no data points could be parsed. Please check the data format.");
+      throw new Error("Header found, but no valid data points extracted.");
   }
 
-  return {
-    metadata,
-    data,
-    detectedNominalThickness,
-  };
+  return { metadata, data, detectedNominalThickness };
 }
