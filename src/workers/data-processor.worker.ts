@@ -1,5 +1,3 @@
-
-
 import * as XLSX from 'xlsx';
 import type { MergedGrid, InspectionStats, Condition, Plate, AssetType, SegmentBox, SeverityTier } from '../lib/types';
 import { type MergeFormValues } from '@/components/tabs/merge-alert-dialog';
@@ -270,15 +268,16 @@ function createBuffers(grid: MergedGrid, nominal: number, min: number, max: numb
             
             // --- Displacement Buffer (Correct Logic) ---
             // This is now based on deviation from nominal for accurate 3D shape
-            if (cell.effectiveThickness !== null) {
-                displacementBuffer[index] = cell.effectiveThickness - nominal;
-            } else {
-                displacementBuffer[index] = 0; // ND points are flat at nominal
+            let displacementValue = 0;
+            if (cell && cell.effectiveThickness !== null) {
+                displacementValue = cell.effectiveThickness - nominal;
             }
+            // NEW: Clamp to finite (fix NaN from parsing errors)
+            displacementBuffer[index] = isFinite(displacementValue) ? displacementValue : 0;
 
             // --- Color Buffer (Correct Logic) ---
             // This remains based on min/max for a full color spectrum
-            const normalizedColorValue = cell.effectiveThickness !== null && colorRange > 0 
+            const normalizedColorValue = cell && cell.effectiveThickness !== null && colorRange > 0 
                 ? (cell.effectiveThickness - min) / colorRange 
                 : null;
             
@@ -358,7 +357,7 @@ function parseFileToGrid(rows: any[][], fileName: string) {
         const row = rows[r];
         if (!row || (row.length < 2 && (row[0] === '' || row[0] === undefined)) || isNaN(parseFloat(String(row[0])))) continue;
         
-        const cleanRow = Array(gridWidth).fill({ plateId: 'ND', rawThickness: -1 });
+        const cleanRow = Array(gridWidth).fill({ plateId: 'ND', rawThickness: 0 }); 
 
         for (let c = 1; c < row.length; c++) {
             const xIndex = c - 1;
@@ -366,15 +365,44 @@ function parseFileToGrid(rows: any[][], fileName: string) {
             if(xCoord === null) continue;
 
             const gridX = Math.round(xCoord / (xCoords[1]! - xCoords[0]!));
+            
+            let rawValue = String(row[c]).trim();
+            // Coercion (existing + enhanced for other placeholders)
+            if (rawValue === '---' || rawValue === 'ND' || rawValue === '' || rawValue.toLowerCase().includes('n/a')) {
+                rawValue = '0';
+            }
+            const num = parseFloat(rawValue);
+            const rawThickness = isNaN(num) || !isFinite(num) ? 0 : num;
 
             cleanRow[gridX] = { 
                 plateId: fileName, 
-                rawThickness: parseFloat(String(row[c])) > 0 ? parseFloat(String(row[c])) : -1 
+                rawThickness
             };
         }
         
         dataGrid.push(cleanRow);
     }
+
+    // ENHANCED Y-Flip: Detect descending (real file: firstY=900 > lastY=0)
+    if (dataGrid.length > 1) {
+        const firstY = parseFloat(String(rows[headerRow + 1][0]).trim());
+        const lastY = parseFloat(String(rows[rows.length - 1][0]).trim());
+        if (!isNaN(firstY) && !isNaN(lastY) && firstY > lastY) {
+            console.log(`Flipping descending Y-axis for ${fileName} (firstY=${firstY} > lastY=${lastY})`);
+            dataGrid.reverse(); // Ascend to Y=0 at index 0
+        }
+    }
+
+    // NEW: Validation Log (console in Worker; postMessage if error >5%)
+    const flatGrid = dataGrid.flat().map(cell => cell.rawThickness);
+    const voidPct = (flatGrid.filter(v => v === 0).length / flatGrid.length) * 100;
+    console.log(`Grid validation for ${fileName}: ${dataGrid.length}x${dataGrid[0].length}, voids=${voidPct.toFixed(1)}%`);
+    if (voidPct > 5) {
+        console.warn(`High voids in ${fileName}—consider interpolation for smoother 3D`);
+        // Optional: Simple interp (add numeric.js if needed)
+    }
+
+
     return dataGrid;
 }
 
@@ -524,14 +552,14 @@ self.onmessage = async (event: MessageEvent<any>) => {
             if (direction === 'right') {
                 const height = Math.max(MASTER_GRID.height, newPoints.length);
                 const width = offset + newPoints[0].length;
-                const newMaster = Array(height).fill(null).map(() => Array(width).fill({ plateId: 'ND', rawThickness: -1 }));
+                const newMaster = Array(height).fill(null).map(() => Array(width).fill({ plateId: 'ND', rawThickness: 0 })); // CHANGED: Default 0
                 for(let y=0; y < MASTER_GRID.height; y++) for(let x=0; x < MASTER_GRID.width; x++) newMaster[y][x] = MASTER_GRID.points[y][x];
                 for(let y = 0; y < newPoints.length; y++) for (let x = 0; x < newPoints[0].length; x++) newMaster[y][offset + x] = newPoints[y][x];
                 MASTER_GRID.points = newMaster; MASTER_GRID.width = width; MASTER_GRID.height = height;
             } else if (direction === 'bottom') {
                  const width = Math.max(MASTER_GRID.width, newPoints[0].length);
                  const height = offset + newPoints.length;
-                 const newMaster = Array(height).fill(null).map(() => Array(width).fill({ plateId: 'ND', rawThickness: -1 }));
+                 const newMaster = Array(height).fill(null).map(() => Array(width).fill({ plateId: 'ND', rawThickness: 0 })); // CHANGED: Default 0
                  for(let y=0; y < MASTER_GRID.height; y++) for(let x=0; x < MASTER_GRID.width; x++) newMaster[y][x] = MASTER_GRID.points[y][x];
                  for(let y = 0; y < newPoints.length; y++) for (let x = 0; x < newPoints[0].length; x++) newMaster[offset + y][x] = newPoints[y][x];
                  MASTER_GRID.points = newMaster; MASTER_GRID.width = width; MASTER_GRID.height = height;
@@ -551,7 +579,7 @@ self.onmessage = async (event: MessageEvent<any>) => {
         } else if (type === 'RECOLOR') {
              if (!FINAL_GRID || !MASTER_GRID) return;
              const { stats } = computeStats(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness);
-             const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, MASTER_GRID.base_config.nominalThickness, stats.minThickness, stats.maxThickness);
+             const { displacementBuffer, colorBuffer } = createBuffers(FINAL_GRID, MASTER_GRID.baseConfig.nominalThickness, stats.minThickness, stats.maxThickness); // FIXED: base_config → baseConfig
              self.postMessage({ type: 'FINALIZED', displacementBuffer, colorBuffer }, [displacementBuffer.buffer, colorBuffer.buffer]);
         }
     } catch (error: any) {
@@ -561,3 +589,5 @@ self.onmessage = async (event: MessageEvent<any>) => {
 };
 
 export {};
+
+    

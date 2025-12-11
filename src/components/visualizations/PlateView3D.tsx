@@ -192,11 +192,14 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
     const aspect = height / width;
     const visualHeight = VISUAL_WIDTH * aspect;
     
+    const widthSegments = Math.min(256, width > 1 ? width - 1 : 1);
+    const heightSegments = Math.min(256, height > 1 ? height - 1 : 1);
+    
     const geometry = new THREE.PlaneGeometry(
         VISUAL_WIDTH,
         visualHeight,
-        Math.max(1, width - 1),
-        Math.max(1, height - 1)
+        widthSegments,
+        heightSegments
     );
     
     const { displacementBuffer, colorBuffer } = DataVault;
@@ -505,3 +508,4 @@ export const PlateView3D = React.forwardRef<PlateView3DRef, PlateView3DProps>((p
   )
 });
 PlateView3D.displayName = "PlateView3D";
+    
